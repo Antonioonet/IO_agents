@@ -1,0 +1,32 @@
+model:
+  name: llama3.2:3b
+  base_url: http://127.0.0.1:11434/v1
+  api_key: ollama
+  temperature: 0.7
+
+simulation:
+  topic: "How should a small group discuss a controversial news topic responsibly?"
+  rounds: 2
+  output_dir: agent_sim_v0/outputs
+
+tweet_source:
+  csv_path: agent_sim_v0/data/dummi_tweets_brazil.csv
+  user_count: 10
+  min_tweets: 10
+  max_tweets_per_user: 10
+  selection: random
+  seed: 7
+  prompt_template: |
+    Create one concise simulation persona from these public tweet samples.
+
+    User metadata:
+    - Agent name: {name}
+    - Author ID: {author_id}
+    - Total tweets in dataset: {tweet_count}
+
+    Tweet samples:
+    {tweet_examples}
+
+    Describe the user's communication style, likely interests, emotional tone, media behavior,
+    and one possible bias or vulnerability. Keep it realistic, synthetic, and under 120 words.
+    The persona should only output tweets in English during the simulation.

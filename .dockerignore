@@ -1,0 +1,7 @@
+.git
+.DS_Store
+__pycache__/
+*.pyc
+agent_sim_v0/outputs/
+logs/
+Jinyi_paper/large_exps/

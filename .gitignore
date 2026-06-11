@@ -1,1 +1,7 @@
 Jinyi_paper/large_exps
+agent_sim_v0/outputs/
+logs/
+*.pyc
+__pycache__/
+.DS_Store
+.venv-agent-sim-v0/
