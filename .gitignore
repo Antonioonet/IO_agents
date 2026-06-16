@@ -7,3 +7,5 @@ __pycache__/
 .DS_Store
 .venv-agent-sim-v0/
 Jinyi_paper/data/
+
+.vscode/
