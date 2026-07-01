@@ -21,7 +21,29 @@ module load conda
 module load apptainer
 
 source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate oasis
+
+CONDA_ENV="${CONDA_ENV:-oasis}"
+conda activate "$CONDA_ENV"
+
+echo "Python environment:"
+echo "  CONDA_DEFAULT_ENV=${CONDA_DEFAULT_ENV:-unset}"
+echo "  python=$(command -v python)"
+python - <<'PY'
+import importlib.util
+import site
+import sys
+
+print(f"  sys.executable={sys.executable}")
+print(f"  sys.version={sys.version.split()[0]}")
+print(f"  user_site={site.getusersitepackages()}")
+print(f"  oasis_spec={importlib.util.find_spec('oasis')}")
+PY
+
+python - <<'PY'
+import oasis
+
+print(f"Imported oasis from: {getattr(oasis, '__file__', '<namespace package>')}")
+PY
 
 MODEL="${MODEL:-smollm2:135m}"
 EXPERIMENT_NAME="${EXPERIMENT_NAME:-exp_$(date +%Y%m%d_%H%M%S)}"
@@ -145,9 +167,6 @@ PY
 
 echo "Running Python simulation test..."
 
-module load conda 
-source "$(conda info --base)/etc/profile.d/conda.sh" 
-conda activate oasis
 export OLLAMA_MODEL="$MODEL"
 
 python generate_russia_personas.py \
