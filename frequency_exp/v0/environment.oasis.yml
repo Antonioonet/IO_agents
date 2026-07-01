@@ -1,7 +1,0 @@
-name: oasis
-channels:
-  - defaults
-dependencies:
-  - pip
-  - python=3.11
-prefix: /Users/antonioneto/miniconda3/envs/oasis

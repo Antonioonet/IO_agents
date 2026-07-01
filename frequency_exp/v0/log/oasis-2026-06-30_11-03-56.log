@@ -1,3 +1,0 @@
-2026-06-30 11:03:57,624 - oasis.env - INFO - update rec table.
-2026-06-30 11:11:31,264 - oasis.env - INFO - performed all actions.
-2026-06-30 11:11:31,267 - oasis.env - INFO - Simulation finished! Please check the results in the database: /Users/antonioneto/Desktop/BEPE/IO_agents/frequency_exp/v0/database/exp_64_agents_20260630_110357.db. Note that the trace table stored all the actions of the agents.
