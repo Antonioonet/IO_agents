@@ -9,3 +9,7 @@ __pycache__/
 Jinyi_paper/data/
 
 .vscode/
+frequency_exp/v0/log/
+frequency_exp/v0/database/
+frequency_exp/v0/data/
+frequency_exp/v0/experiments/
