@@ -29,6 +29,7 @@ EXPERIMENT_NAME="${EXPERIMENT_NAME:-exp_$(date +%Y%m%d_%H%M%S)}"
 export OLLAMA_BASE="/scratch1/$USER/ollama-gpu-oasis"
 export OLLAMA_MODELS_DIR="$OLLAMA_BASE/models"
 export OLLAMA_SIF="$OLLAMA_BASE/ollama_latest.sif"
+export OLLAMA_SERVER_LOG="$OLLAMA_BASE/ollama-server-${SLURM_JOB_ID}.log"
 export APPTAINER_CACHEDIR="/scratch1/$USER/apptainer-cache"
 
 mkdir -p "$OLLAMA_BASE" "$OLLAMA_MODELS_DIR" "$APPTAINER_CACHEDIR"
@@ -67,15 +68,29 @@ trap cleanup EXIT
 echo "Starting Ollama GPU server..."
 
 "${APPTAINER_OLLAMA[@]}" \
-    ollama serve > "$OLLAMA_BASE/ollama-server-${SLURM_JOB_ID}.log" 2>&1 &
+    ollama serve > "$OLLAMA_SERVER_LOG" 2>&1 &
 
 OLLAMA_PID=$!
 
 echo "Waiting for Ollama server..."
 
+check_ollama_ready() {
+    python - "$OLLAMA_BASE_URL/api/tags" <<'PY'
+import sys
+from urllib.error import HTTPError, URLError
+from urllib.request import urlopen
+
+try:
+    with urlopen(sys.argv[1], timeout=5) as response:
+        sys.exit(0 if 200 <= response.status < 500 else 1)
+except (HTTPError, URLError, TimeoutError, OSError):
+    sys.exit(1)
+PY
+}
+
 OLLAMA_READY=0
-for i in {1..60}; do
-    if curl -s "$OLLAMA_BASE_URL/api/tags" > /dev/null; then
+for i in {1..180}; do
+    if check_ollama_ready; then
         echo "Ollama is ready."
         OLLAMA_READY=1
         break
@@ -83,8 +98,14 @@ for i in {1..60}; do
 
     if ! kill -0 "$OLLAMA_PID" 2>/dev/null; then
         echo "Ollama server died."
-        echo "Check log: $OLLAMA_BASE/ollama-server-${SLURM_JOB_ID}.log"
+        echo "Check log: $OLLAMA_SERVER_LOG"
+        tail -n 80 "$OLLAMA_SERVER_LOG" || true
         exit 1
+    fi
+
+    if [ "$((i % 15))" -eq 0 ]; then
+        echo "Still waiting for Ollama after $((i * 2)) seconds..."
+        tail -n 20 "$OLLAMA_SERVER_LOG" || true
     fi
 
     sleep 2
@@ -92,7 +113,8 @@ done
 
 if [ "$OLLAMA_READY" -ne 1 ]; then
     echo "Ollama server did not become ready in time."
-    echo "Check log: $OLLAMA_BASE/ollama-server-${SLURM_JOB_ID}.log"
+    echo "Check log: $OLLAMA_SERVER_LOG"
+    tail -n 120 "$OLLAMA_SERVER_LOG" || true
     exit 1
 fi
 
@@ -107,9 +129,19 @@ echo "Pulling model: $MODEL"
 
 echo "Testing Ollama API..."
 
-curl -s "$OLLAMA_BASE_URL/api/generate" \
-    -d "{\"model\":\"$MODEL\", \"prompt\":\"Reply with exactly: OLLAMA_OK\", \"stream\":false}" \
-    | python -m json.tool
+python - "$OLLAMA_BASE_URL/api/generate" "$MODEL" <<'PY'
+import json
+import sys
+from urllib.request import Request, urlopen
+
+url, model = sys.argv[1], sys.argv[2]
+payload = json.dumps(
+    {"model": model, "prompt": "Reply with exactly: OLLAMA_OK", "stream": False}
+).encode("utf-8")
+request = Request(url, data=payload, headers={"Content-Type": "application/json"})
+with urlopen(request, timeout=180) as response:
+    print(json.dumps(json.load(response), indent=2))
+PY
 
 echo "Running Python simulation test..."
 
