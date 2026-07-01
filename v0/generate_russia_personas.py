@@ -17,7 +17,7 @@ import pandas as pd
 
 DEFAULT_MODEL = "qwen2.5:7b-instruct"
 DEFAULT_OLLAMA_URL = "http://localhost:11434"
-DEFAULT_AGENT_COUNT = 32
+DEFAULT_AGENT_COUNT = 1
 PROFILE_COLUMNS = ["user_id", "name", "username", "user_char", "description"]
 
 
