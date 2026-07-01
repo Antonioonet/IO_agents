@@ -145,7 +145,11 @@ PY
 
 echo "Running Python simulation test..."
 
+module load conda 
+source "$(conda info --base)/etc/profile.d/conda.sh" 
+conda activate oasis
 export OLLAMA_MODEL="$MODEL"
+
 python generate_russia_personas.py \
     --model "$MODEL" \
     --ollama-url "$OLLAMA_BASE_URL" \
