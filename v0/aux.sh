@@ -47,6 +47,12 @@ PY
 
 MODEL="${MODEL:-qwen2.5:7b-instruct}"
 EXPERIMENT_NAME="${EXPERIMENT_NAME:-exp_$(date +%Y%m%d_%H%M%S)}"
+OLLAMA_NUM_PARALLEL="${OLLAMA_NUM_PARALLEL:-2}"
+OLLAMA_MAX_LOADED_MODELS="${OLLAMA_MAX_LOADED_MODELS:-1}"
+OLLAMA_MAX_QUEUE="${OLLAMA_MAX_QUEUE:-512}"
+OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:--1}"
+PERSONA_WORKERS="${PERSONA_WORKERS:-$OLLAMA_NUM_PARALLEL}"
+PERSONA_TIMEOUT="${PERSONA_TIMEOUT:-300}"
 
 export OLLAMA_BASE="/scratch1/$USER/ollama-gpu-oasis"
 export OLLAMA_MODELS_DIR="$OLLAMA_BASE/models"
@@ -68,6 +74,10 @@ export OLLAMA_OPENAI_URL="$OLLAMA_BASE_URL/v1"
 # Pass env vars into Apptainer.
 export APPTAINERENV_OLLAMA_HOST="$OLLAMA_HOST"
 export APPTAINERENV_OLLAMA_MODELS="/models"
+export APPTAINERENV_OLLAMA_NUM_PARALLEL="$OLLAMA_NUM_PARALLEL"
+export APPTAINERENV_OLLAMA_MAX_LOADED_MODELS="$OLLAMA_MAX_LOADED_MODELS"
+export APPTAINERENV_OLLAMA_MAX_QUEUE="$OLLAMA_MAX_QUEUE"
+export APPTAINERENV_OLLAMA_KEEP_ALIVE="$OLLAMA_KEEP_ALIVE"
 
 # CPU threading hint for Python and Ollama.
 export OMP_NUM_THREADS="$SLURM_CPUS_PER_TASK"
@@ -142,6 +152,13 @@ fi
 
 echo "Using model: $MODEL"
 echo "Experiment name: $EXPERIMENT_NAME"
+echo "Ollama concurrency:"
+echo "  OLLAMA_NUM_PARALLEL=$OLLAMA_NUM_PARALLEL"
+echo "  OLLAMA_MAX_LOADED_MODELS=$OLLAMA_MAX_LOADED_MODELS"
+echo "  OLLAMA_MAX_QUEUE=$OLLAMA_MAX_QUEUE"
+echo "  OLLAMA_KEEP_ALIVE=$OLLAMA_KEEP_ALIVE"
+echo "Python request concurrency:"
+echo "  PERSONA_WORKERS=$PERSONA_WORKERS"
 echo "GPU visibility from job:"
 nvidia-smi || true
 
@@ -172,7 +189,9 @@ export OLLAMA_MODEL="$MODEL"
 python generate_russia_personas.py \
     --model "$MODEL" \
     --ollama-url "$OLLAMA_BASE_URL" \
-    --experiment-name "$EXPERIMENT_NAME"
+    --experiment-name "$EXPERIMENT_NAME" \
+    --workers "$PERSONA_WORKERS" \
+    --timeout "$PERSONA_TIMEOUT"
 
 python v0.py \
     --model "$MODEL" \
