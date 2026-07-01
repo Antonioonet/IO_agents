@@ -17,7 +17,9 @@ import pandas as pd
 
 DEFAULT_MODEL = "qwen2.5:7b-instruct"
 DEFAULT_OLLAMA_URL = "http://localhost:11434"
-DEFAULT_AGENT_COUNT = 1
+DEFAULT_AGENT_COUNT_IO = 10
+DEFAULT_AGENT_COUNT_USER = 40
+
 PROFILE_COLUMNS = ["user_id", "name", "username", "user_char", "description"]
 
 
@@ -44,8 +46,8 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=base_dir / "experiments",
     )
-    parser.add_argument("--io-agent-count", type=int, default=DEFAULT_AGENT_COUNT)
-    parser.add_argument("--normal-agent-count", type=int, default=DEFAULT_AGENT_COUNT)
+    parser.add_argument("--io-agent-count", type=int, default=DEFAULT_AGENT_COUNT_IO)
+    parser.add_argument("--normal-agent-count", type=int, default=DEFAULT_AGENT_COUNT_USER)
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--ollama-url", default=DEFAULT_OLLAMA_URL)
     parser.add_argument("--min-tweets", type=int, default=20)
