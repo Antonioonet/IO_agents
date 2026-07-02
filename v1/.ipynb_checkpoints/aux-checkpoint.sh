@@ -61,7 +61,7 @@ import oasis
 print(f"Imported oasis from: {getattr(oasis, '__file__', '<namespace package>')}")
 PY
 
-MODEL="${MODEL:-qwen2.5:0.5b-instruct}"
+MODEL="${MODEL:-qwen3.6:35b-a3b}"
 EXPERIMENT_NAME="${EXPERIMENT_NAME:-exp_$(date +%Y%m%d_%H%M%S)}"
 OLLAMA_NUM_PARALLEL="${OLLAMA_NUM_PARALLEL:-2}"
 OLLAMA_MAX_LOADED_MODELS="${OLLAMA_MAX_LOADED_MODELS:-1}"
@@ -70,8 +70,6 @@ OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:--1}"
 OLLAMA_SCHED_SPREAD="${OLLAMA_SCHED_SPREAD:-true}"
 PERSONA_WORKERS="${PERSONA_WORKERS:-$OLLAMA_NUM_PARALLEL}"
 PERSONA_TIMEOUT="${PERSONA_TIMEOUT:-300}"
-OLLAMA_TEST_TIMEOUT="${OLLAMA_TEST_TIMEOUT:-600}"
-OLLAMA_TEST_PREDICT="${OLLAMA_TEST_PREDICT:-8}"
 
 export OLLAMA_BASE="/scratch1/$USER/ollama-gpu-oasis"
 export OLLAMA_MODELS_DIR="$OLLAMA_BASE/models"
@@ -98,9 +96,6 @@ export APPTAINERENV_OLLAMA_MAX_LOADED_MODELS="$OLLAMA_MAX_LOADED_MODELS"
 export APPTAINERENV_OLLAMA_MAX_QUEUE="$OLLAMA_MAX_QUEUE"
 export APPTAINERENV_OLLAMA_KEEP_ALIVE="$OLLAMA_KEEP_ALIVE"
 export APPTAINERENV_OLLAMA_SCHED_SPREAD="$OLLAMA_SCHED_SPREAD"
-if [ -n "${CUDA_VISIBLE_DEVICES:-}" ]; then
-    export APPTAINERENV_CUDA_VISIBLE_DEVICES="$CUDA_VISIBLE_DEVICES"
-fi
 
 # CPU threading hint for Python and Ollama.
 export OMP_NUM_THREADS="$SLURM_CPUS_PER_TASK"
@@ -185,44 +180,26 @@ echo "Python request concurrency:"
 echo "  PERSONA_WORKERS=$PERSONA_WORKERS"
 echo "GPU visibility from job:"
 nvidia-smi || true
-echo "GPU visibility from Ollama container:"
-"${APPTAINER_OLLAMA[@]}" nvidia-smi || true
 
 echo "Pulling model: $MODEL"
 
 "${APPTAINER_OLLAMA[@]}" ollama pull "$MODEL"
 
 echo "Testing Ollama API..."
-echo "  OLLAMA_TEST_TIMEOUT=$OLLAMA_TEST_TIMEOUT"
-echo "  OLLAMA_TEST_PREDICT=$OLLAMA_TEST_PREDICT"
-echo "GPU state before Ollama test:"
-nvidia-smi || true
 
-python - "$OLLAMA_BASE_URL/api/generate" "$MODEL" "$OLLAMA_TEST_TIMEOUT" "$OLLAMA_TEST_PREDICT" <<'PY'
+python - "$OLLAMA_BASE_URL/api/generate" "$MODEL" <<'PY'
 import json
 import sys
 from urllib.request import Request, urlopen
 
-url, model, timeout, num_predict = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
+url, model = sys.argv[1], sys.argv[2]
 payload = json.dumps(
-    {
-        "model": model,
-        "prompt": "Reply with exactly: OLLAMA_OK",
-        "stream": False,
-        "options": {"num_predict": num_predict},
-    }
+    {"model": model, "prompt": "Reply with exactly: OLLAMA_OK", "stream": False}
 ).encode("utf-8")
 request = Request(url, data=payload, headers={"Content-Type": "application/json"})
-with urlopen(request, timeout=timeout) as response:
+with urlopen(request, timeout=180) as response:
     print(json.dumps(json.load(response), indent=2))
 PY
-
-echo "GPU state after Ollama test:"
-nvidia-smi || true
-echo "Ollama loaded models:"
-"${APPTAINER_OLLAMA[@]}" ollama ps || true
-echo "Recent Ollama server log:"
-tail -n 120 "$OLLAMA_SERVER_LOG" || true
 
 echo "Running Python simulation test..."
 
