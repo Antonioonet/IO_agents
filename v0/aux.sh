@@ -14,7 +14,23 @@
 
 set -euo pipefail
 
-cd "$(dirname "$0")"
+SCRIPT_DIR="${PROJECT_DIR:-${SLURM_SUBMIT_DIR:-$(pwd)}}"
+if [ ! -f "$SCRIPT_DIR/generate_russia_personas.py" ] && [ -d "$SCRIPT_DIR/IO_agents/v0" ]; then
+    SCRIPT_DIR="$SCRIPT_DIR/IO_agents/v0"
+fi
+RUN_DIR="${RUN_DIR:-/scratch1/$USER/oasis-runs/${SLURM_JOB_ID:-manual}}"
+
+if [ ! -f "$SCRIPT_DIR/generate_russia_personas.py" ] || [ ! -f "$SCRIPT_DIR/v0.py" ]; then
+    echo "Could not find simulation scripts in: $SCRIPT_DIR"
+    echo "Submit from IO_agents/v0, or set PROJECT_DIR=/path/to/IO_agents/v0 when calling sbatch."
+    exit 1
+fi
+
+mkdir -p "$RUN_DIR"
+cd "$RUN_DIR"
+
+echo "Script directory: $SCRIPT_DIR"
+echo "Run directory: $RUN_DIR"
 
 module purge
 module load conda
@@ -189,14 +205,14 @@ echo "Running Python simulation test..."
 
 export OLLAMA_MODEL="$MODEL"
 
-python generate_russia_personas.py \
+python "$SCRIPT_DIR/generate_russia_personas.py" \
     --model "$MODEL" \
     --ollama-url "$OLLAMA_BASE_URL" \
     --experiment-name "$EXPERIMENT_NAME" \
     --workers "$PERSONA_WORKERS" \
     --timeout "$PERSONA_TIMEOUT"
 
-python v0.py \
+python "$SCRIPT_DIR/v0.py" \
     --model "$MODEL" \
     --ollama-url "$OLLAMA_OPENAI_URL" \
     --experiment-name "$EXPERIMENT_NAME"
