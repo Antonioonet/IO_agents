@@ -1,20 +1,36 @@
 #!/bin/bash
 
-#SBATCH --account=<your_project_id>
+#SBATCH --account=ll_774_951
 #SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
+#SBATCH --cpus-per-task=6
 #SBATCH --gpus-per-task=1
-#SBATCH --mem=32G
-#SBATCH --time=02:00:00
+#SBATCH --mem=48G
+#SBATCH --time=01:00:00
 #SBATCH --job-name=ollama-gpu-oasis
 #SBATCH --output=ollama-gpu-oasis-%j.out
 #SBATCH --error=ollama-gpu-oasis-%j.err
 
 set -euo pipefail
 
-cd "$(dirname "$0")"
+SCRIPT_DIR="${PROJECT_DIR:-${SLURM_SUBMIT_DIR:-$(pwd)}}"
+if [ ! -f "$SCRIPT_DIR/generate_russia_personas.py" ] && [ -d "$SCRIPT_DIR/IO_agents/v0" ]; then
+    SCRIPT_DIR="$SCRIPT_DIR/IO_agents/v0"
+fi
+RUN_DIR="${RUN_DIR:-/scratch1/$USER/oasis-runs/${SLURM_JOB_ID:-manual}}"
+
+if [ ! -f "$SCRIPT_DIR/generate_russia_personas.py" ] || [ ! -f "$SCRIPT_DIR/v0.py" ]; then
+    echo "Could not find simulation scripts in: $SCRIPT_DIR"
+    echo "Submit from IO_agents/v0, or set PROJECT_DIR=/path/to/IO_agents/v0 when calling sbatch."
+    exit 1
+fi
+
+mkdir -p "$RUN_DIR"
+cd "$RUN_DIR"
+
+echo "Script directory: $SCRIPT_DIR"
+echo "Run directory: $RUN_DIR"
 
 module purge
 module load conda
@@ -45,8 +61,15 @@ import oasis
 print(f"Imported oasis from: {getattr(oasis, '__file__', '<namespace package>')}")
 PY
 
-MODEL="${MODEL:-qwen2.5:7b-instruct}"
+MODEL="${MODEL:-qwen3.6:35b-a3b}"
 EXPERIMENT_NAME="${EXPERIMENT_NAME:-exp_$(date +%Y%m%d_%H%M%S)}"
+OLLAMA_NUM_PARALLEL="${OLLAMA_NUM_PARALLEL:-2}"
+OLLAMA_MAX_LOADED_MODELS="${OLLAMA_MAX_LOADED_MODELS:-1}"
+OLLAMA_MAX_QUEUE="${OLLAMA_MAX_QUEUE:-512}"
+OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:--1}"
+OLLAMA_SCHED_SPREAD="${OLLAMA_SCHED_SPREAD:-true}"
+PERSONA_WORKERS="${PERSONA_WORKERS:-$OLLAMA_NUM_PARALLEL}"
+PERSONA_TIMEOUT="${PERSONA_TIMEOUT:-300}"
 
 export OLLAMA_BASE="/scratch1/$USER/ollama-gpu-oasis"
 export OLLAMA_MODELS_DIR="$OLLAMA_BASE/models"
@@ -68,6 +91,11 @@ export OLLAMA_OPENAI_URL="$OLLAMA_BASE_URL/v1"
 # Pass env vars into Apptainer.
 export APPTAINERENV_OLLAMA_HOST="$OLLAMA_HOST"
 export APPTAINERENV_OLLAMA_MODELS="/models"
+export APPTAINERENV_OLLAMA_NUM_PARALLEL="$OLLAMA_NUM_PARALLEL"
+export APPTAINERENV_OLLAMA_MAX_LOADED_MODELS="$OLLAMA_MAX_LOADED_MODELS"
+export APPTAINERENV_OLLAMA_MAX_QUEUE="$OLLAMA_MAX_QUEUE"
+export APPTAINERENV_OLLAMA_KEEP_ALIVE="$OLLAMA_KEEP_ALIVE"
+export APPTAINERENV_OLLAMA_SCHED_SPREAD="$OLLAMA_SCHED_SPREAD"
 
 # CPU threading hint for Python and Ollama.
 export OMP_NUM_THREADS="$SLURM_CPUS_PER_TASK"
@@ -142,6 +170,14 @@ fi
 
 echo "Using model: $MODEL"
 echo "Experiment name: $EXPERIMENT_NAME"
+echo "Ollama concurrency:"
+echo "  OLLAMA_NUM_PARALLEL=$OLLAMA_NUM_PARALLEL"
+echo "  OLLAMA_MAX_LOADED_MODELS=$OLLAMA_MAX_LOADED_MODELS"
+echo "  OLLAMA_MAX_QUEUE=$OLLAMA_MAX_QUEUE"
+echo "  OLLAMA_KEEP_ALIVE=$OLLAMA_KEEP_ALIVE"
+echo "  OLLAMA_SCHED_SPREAD=$OLLAMA_SCHED_SPREAD"
+echo "Python request concurrency:"
+echo "  PERSONA_WORKERS=$PERSONA_WORKERS"
 echo "GPU visibility from job:"
 nvidia-smi || true
 
@@ -169,14 +205,18 @@ echo "Running Python simulation test..."
 
 export OLLAMA_MODEL="$MODEL"
 
-python generate_russia_personas.py \
+python "$SCRIPT_DIR/generate_russia_personas.py" \
     --model "$MODEL" \
     --ollama-url "$OLLAMA_BASE_URL" \
-    --experiment-name "$EXPERIMENT_NAME"
+    --experiment-name "$EXPERIMENT_NAME" \
+    --workers "$PERSONA_WORKERS" \
+    --timeout "$PERSONA_TIMEOUT" 
 
-python v0.py \
+python "$SCRIPT_DIR/v0.py" \
     --model "$MODEL" \
     --ollama-url "$OLLAMA_OPENAI_URL" \
-    --experiment-name "$EXPERIMENT_NAME"
+    --experiment-name "$EXPERIMENT_NAME" \
+    --llm-steps 10 
+     
 
 echo "GPU OASIS run finished successfully."

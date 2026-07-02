@@ -4,10 +4,10 @@
 #SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=16
-#SBATCH --gpus-per-task=a40:2
-#SBATCH --mem=96G
-#SBATCH --time=04:00:00
+#SBATCH --cpus-per-task=6
+#SBATCH --gpus-per-task=1
+#SBATCH --mem=48G
+#SBATCH --time=01:00:00
 #SBATCH --job-name=ollama-gpu-oasis
 #SBATCH --output=ollama-gpu-oasis-%j.out
 #SBATCH --error=ollama-gpu-oasis-%j.err
@@ -210,11 +210,13 @@ python "$SCRIPT_DIR/generate_russia_personas.py" \
     --ollama-url "$OLLAMA_BASE_URL" \
     --experiment-name "$EXPERIMENT_NAME" \
     --workers "$PERSONA_WORKERS" \
-    --timeout "$PERSONA_TIMEOUT"
+    --timeout "$PERSONA_TIMEOUT" 
 
 python "$SCRIPT_DIR/v0.py" \
     --model "$MODEL" \
     --ollama-url "$OLLAMA_OPENAI_URL" \
-    --experiment-name "$EXPERIMENT_NAME"
+    --experiment-name "$EXPERIMENT_NAME" \
+    --llm-steps 10 
+     
 
 echo "GPU OASIS run finished successfully."

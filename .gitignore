@@ -6,3 +6,5 @@ v0/experiments/
 v0/log/
 v0/data/
 .vscode/
+*.out
+
