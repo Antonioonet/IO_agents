@@ -70,6 +70,7 @@ OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:--1}"
 OLLAMA_SCHED_SPREAD="${OLLAMA_SCHED_SPREAD:-true}"
 PERSONA_WORKERS="${PERSONA_WORKERS:-$OLLAMA_NUM_PARALLEL}"
 PERSONA_TIMEOUT="${PERSONA_TIMEOUT:-300}"
+OLLAMA_TEST_TIMEOUT="${OLLAMA_TEST_TIMEOUT:-600}"
 
 export OLLAMA_BASE="/scratch1/$USER/ollama-gpu-oasis"
 export OLLAMA_MODELS_DIR="$OLLAMA_BASE/models"
@@ -96,6 +97,9 @@ export APPTAINERENV_OLLAMA_MAX_LOADED_MODELS="$OLLAMA_MAX_LOADED_MODELS"
 export APPTAINERENV_OLLAMA_MAX_QUEUE="$OLLAMA_MAX_QUEUE"
 export APPTAINERENV_OLLAMA_KEEP_ALIVE="$OLLAMA_KEEP_ALIVE"
 export APPTAINERENV_OLLAMA_SCHED_SPREAD="$OLLAMA_SCHED_SPREAD"
+if [ -n "${CUDA_VISIBLE_DEVICES:-}" ]; then
+    export APPTAINERENV_CUDA_VISIBLE_DEVICES="$CUDA_VISIBLE_DEVICES"
+fi
 
 # CPU threading hint for Python and Ollama.
 export OMP_NUM_THREADS="$SLURM_CPUS_PER_TASK"
@@ -180,24 +184,32 @@ echo "Python request concurrency:"
 echo "  PERSONA_WORKERS=$PERSONA_WORKERS"
 echo "GPU visibility from job:"
 nvidia-smi || true
+echo "GPU visibility from Ollama container:"
+"${APPTAINER_OLLAMA[@]}" nvidia-smi || true
 
 echo "Pulling model: $MODEL"
 
 "${APPTAINER_OLLAMA[@]}" ollama pull "$MODEL"
 
 echo "Testing Ollama API..."
+echo "  OLLAMA_TEST_TIMEOUT=$OLLAMA_TEST_TIMEOUT"
 
-python - "$OLLAMA_BASE_URL/api/generate" "$MODEL" <<'PY'
+python - "$OLLAMA_BASE_URL/api/generate" "$MODEL" "$OLLAMA_TEST_TIMEOUT" <<'PY'
 import json
 import sys
 from urllib.request import Request, urlopen
 
-url, model = sys.argv[1], sys.argv[2]
+url, model, timeout = sys.argv[1], sys.argv[2], int(sys.argv[3])
 payload = json.dumps(
-    {"model": model, "prompt": "Reply with exactly: OLLAMA_OK", "stream": False}
+    {
+        "model": model,
+        "prompt": "Reply with exactly: OLLAMA_OK",
+        "stream": False,
+        "options": {"num_predict": 8},
+    }
 ).encode("utf-8")
 request = Request(url, data=payload, headers={"Content-Type": "application/json"})
-with urlopen(request, timeout=180) as response:
+with urlopen(request, timeout=timeout) as response:
     print(json.dumps(json.load(response), indent=2))
 PY
 
