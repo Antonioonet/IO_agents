@@ -1,13 +1,13 @@
 #!/bin/bash
 
-#SBATCH --account=<your_project_id>
+#SBATCH --account=ll_774_951
 #SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
-#SBATCH --gpus-per-task=1
-#SBATCH --mem=32G
-#SBATCH --time=02:00:00
+#SBATCH --cpus-per-task=16
+#SBATCH --gpus-per-task=a40:2
+#SBATCH --mem=96G
+#SBATCH --time=04:00:00
 #SBATCH --job-name=ollama-gpu-oasis
 #SBATCH --output=ollama-gpu-oasis-%j.out
 #SBATCH --error=ollama-gpu-oasis-%j.err
@@ -45,12 +45,13 @@ import oasis
 print(f"Imported oasis from: {getattr(oasis, '__file__', '<namespace package>')}")
 PY
 
-MODEL="${MODEL:-qwen2.5:7b-instruct}"
+MODEL="${MODEL:-qwen3.6:35b-a3b}"
 EXPERIMENT_NAME="${EXPERIMENT_NAME:-exp_$(date +%Y%m%d_%H%M%S)}"
 OLLAMA_NUM_PARALLEL="${OLLAMA_NUM_PARALLEL:-2}"
 OLLAMA_MAX_LOADED_MODELS="${OLLAMA_MAX_LOADED_MODELS:-1}"
 OLLAMA_MAX_QUEUE="${OLLAMA_MAX_QUEUE:-512}"
 OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:--1}"
+OLLAMA_SCHED_SPREAD="${OLLAMA_SCHED_SPREAD:-true}"
 PERSONA_WORKERS="${PERSONA_WORKERS:-$OLLAMA_NUM_PARALLEL}"
 PERSONA_TIMEOUT="${PERSONA_TIMEOUT:-300}"
 
@@ -78,6 +79,7 @@ export APPTAINERENV_OLLAMA_NUM_PARALLEL="$OLLAMA_NUM_PARALLEL"
 export APPTAINERENV_OLLAMA_MAX_LOADED_MODELS="$OLLAMA_MAX_LOADED_MODELS"
 export APPTAINERENV_OLLAMA_MAX_QUEUE="$OLLAMA_MAX_QUEUE"
 export APPTAINERENV_OLLAMA_KEEP_ALIVE="$OLLAMA_KEEP_ALIVE"
+export APPTAINERENV_OLLAMA_SCHED_SPREAD="$OLLAMA_SCHED_SPREAD"
 
 # CPU threading hint for Python and Ollama.
 export OMP_NUM_THREADS="$SLURM_CPUS_PER_TASK"
@@ -157,6 +159,7 @@ echo "  OLLAMA_NUM_PARALLEL=$OLLAMA_NUM_PARALLEL"
 echo "  OLLAMA_MAX_LOADED_MODELS=$OLLAMA_MAX_LOADED_MODELS"
 echo "  OLLAMA_MAX_QUEUE=$OLLAMA_MAX_QUEUE"
 echo "  OLLAMA_KEEP_ALIVE=$OLLAMA_KEEP_ALIVE"
+echo "  OLLAMA_SCHED_SPREAD=$OLLAMA_SCHED_SPREAD"
 echo "Python request concurrency:"
 echo "  PERSONA_WORKERS=$PERSONA_WORKERS"
 echo "GPU visibility from job:"
