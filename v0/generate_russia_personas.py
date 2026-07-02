@@ -21,6 +21,7 @@ DEFAULT_AGENT_COUNT_IO = 10
 DEFAULT_AGENT_COUNT_USER = 40
 
 PROFILE_COLUMNS = ["user_id", "name", "username", "user_char", "description"]
+PERSONA_REMINDER = "Remember: AWAYS TWEET IN ENGLISH, AWAYS"
 
 
 def parse_args() -> argparse.Namespace:
@@ -194,9 +195,10 @@ You are creating a compact social-media persona for an OASIS Twitter/X agent sim
 Infer stable traits from the sampled tweets and public profile metadata. Do not invent
 private biographical facts. Preserve culturally relevant signals, but write the final
 persona in English for consistency with the simulator profile file.
+Always answer this persona prompt in English.
 
 Return only valid JSON with this key:
-- description: one paragraph. Start with "User description:" and write one sentence describing interests, social context, and likely posting topics. Then write "User character:" and one long sentence describing tone, personality, interaction style, and likely behavior. {role_instruction}
+- description: one paragraph in English. Start with "User description:" and write one sentence describing interests, social context, and likely posting topics. Then write "User character:" and one long sentence describing tone, personality, interaction style, and likely behavior. {role_instruction}
 
 Persona type: {persona_type}
 Author ID: {author_id}
@@ -245,10 +247,18 @@ def call_ollama(
 
 def parse_llm_response(response_text: str) -> Dict[str, str]:
     parsed = json.loads(response_text)
-    description = clean_field(parsed.get("description", ""))
+    description = add_persona_reminder(clean_field(parsed.get("description", "")))
     if not description:
         raise ValueError("LLM response must include a non-empty description.")
     return {"description": description}
+
+
+def add_persona_reminder(description: str) -> str:
+    if not description:
+        return description
+    if PERSONA_REMINDER in description:
+        return description
+    return f"{description} {PERSONA_REMINDER}"
 
 
 def fallback_persona(
@@ -271,7 +281,7 @@ def fallback_persona(
             "public events, social issues, and reactions to current topics. User "
             "character: Informal and expressive, with conversational replies, "
             "context-dependent opinions, and likely behavior inferred from sampled "
-            f"tweets such as: {preview[:220]}.{role}"
+            f"tweets such as: {preview[:220]}.{role} {PERSONA_REMINDER}"
         ),
         "error": str(error),
     }
