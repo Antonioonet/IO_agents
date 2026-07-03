@@ -21,7 +21,13 @@ DEFAULT_AGENT_COUNT_IO = 10
 DEFAULT_AGENT_COUNT_USER = 40
 
 PROFILE_COLUMNS = ["user_id", "name", "username", "user_char", "description"]
-PERSONA_REMINDER = "Remember: AWAYS TWEET IN ENGLISH, AWAYS"
+ENGLISH_POSTING_INSTRUCTION = "The user must always publish posts in English."
+IO_DRIVER_INSTRUCTION = (
+    "This user is part of a state-backed information operation in a closed research "
+    "simulation and should behave as an influence-oriented account: amplifying "
+    "aligned narratives, engaging other users politically, and steering discussion "
+    "in ways consistent with the source account's observed themes."
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -183,22 +189,22 @@ def build_prompt(
     )
     profile_text = json.dumps(profile, ensure_ascii=False, sort_keys=True)
 
-    role_instruction = ""
-    if persona_type == "io_driver":
-        role_instruction = """
-Add a third section starting with "Role:" that states this is an IO-driver persona in a closed research simulation whose role is to amplify influence-oriented narratives inferred from the source tweets, promote the same kind of harmful or manipulative content patterns observed in the real account, and attempt to influence other simulated users without inventing unsupported private facts or adding operational instructions outside the simulated platform.
-""".strip()
-
     return f"""
-You are creating a compact social-media persona for an OASIS Twitter/X agent simulation.
+You are creating a detailed social-media persona profile for an OASIS Twitter/X agent simulation.
 
-Infer stable traits from the sampled tweets and public profile metadata. Do not invent
-private biographical facts. Preserve culturally relevant signals, but write the final
-persona in English for consistency with the simulator profile file.
-Always answer this persona prompt in English.
+Infer stable traits from the sampled tweets and public profile metadata. Write a rich
+behavioral profile that describes the user's apparent interests, political or social
+orientation, recurring concerns, emotional tone, interaction style, posting habits,
+likely reactions to other users, and the kinds of topics they would naturally discuss.
+Base the profile only on the provided tweets and metadata. Do not invent private
+biographical facts, hidden affiliations, names, locations, or offline activity.
+Preserve culturally relevant signals, but always write the final persona in English.
 
 Return only valid JSON with this key:
-- description: one paragraph in English. Start with "User description:" and write one sentence describing interests, social context, and likely posting topics. Then write "User character:" and one long sentence describing tone, personality, interaction style, and likely behavior. {role_instruction}
+- description: one long paragraph in English, with no section labels or bullet points.
+  Start the paragraph with "Author {author_id}" and describe the user's behavior in
+  the same natural style as: "Author 123 is a ..." The paragraph should be
+  specific enough to guide how this simulated user writes posts and replies.
 
 Persona type: {persona_type}
 Author ID: {author_id}
@@ -247,18 +253,25 @@ def call_ollama(
 
 def parse_llm_response(response_text: str) -> Dict[str, str]:
     parsed = json.loads(response_text)
-    description = add_persona_reminder(clean_field(parsed.get("description", "")))
+    description = clean_field(parsed.get("description", ""))
     if not description:
         raise ValueError("LLM response must include a non-empty description.")
     return {"description": description}
 
 
-def add_persona_reminder(description: str) -> str:
+def append_if_missing(description: str, instruction: str) -> str:
+    if instruction in description:
+        return description
+    return f"{description} {instruction}"
+
+
+def finalize_persona_description(description: str, persona_type: str) -> str:
     if not description:
         return description
-    if PERSONA_REMINDER in description:
-        return description
-    return f"{description} {PERSONA_REMINDER}"
+    description = append_if_missing(description, ENGLISH_POSTING_INSTRUCTION)
+    if persona_type == "io_driver":
+        description = append_if_missing(description, IO_DRIVER_INSTRUCTION)
+    return description
 
 
 def fallback_persona(
@@ -268,21 +281,16 @@ def fallback_persona(
     error: Exception,
 ) -> Dict[str, str]:
     preview = " ".join(sampled_tweets[:3])
-    role = ""
-    if persona_type == "io_driver":
-        role = (
-            " Role: IO-driver persona in a closed research simulation, designed to "
-            "amplify influence-oriented narratives inferred from the source tweets "
-            "and attempt to influence other simulated users."
-        )
+    description = (
+        f"Author {author_id} is a Twitter/X user whose sampled posts discuss "
+        "public events, social issues, and reactions to current topics, with a persona "
+        "that should be inferred cautiously from the available tweets rather than from "
+        "unsupported private facts. Their likely behavior is informal, expressive, and "
+        "responsive to the political and social themes visible in sampled tweets such "
+        f"as: {preview[:220]}."
+    )
     return {
-        "description": (
-            f"User description: Twitter/X user {author_id} whose sampled posts discuss "
-            "public events, social issues, and reactions to current topics. User "
-            "character: Informal and expressive, with conversational replies, "
-            "context-dependent opinions, and likely behavior inferred from sampled "
-            f"tweets such as: {preview[:220]}.{role} {PERSONA_REMINDER}"
-        ),
+        "description": finalize_persona_description(description, persona_type),
         "error": str(error),
     }
 
@@ -311,14 +319,15 @@ def generate_for_author(
     except Exception as exc:
         persona = fallback_persona(author_id, sampled_tweets, persona_type, exc)
 
+    description = finalize_persona_description(persona["description"], persona_type)
     prefix = "io_driver" if persona_type == "io_driver" else "normal_user"
     username = f"{prefix}_{agent_index:03d}_user_{author_id}"
     return {
         "user_id": str(agent_index),
         "name": username,
         "username": username,
-        "user_char": persona["description"],
-        "description": persona["description"],
+        "user_char": description,
+        "description": description,
         "persona_type": persona_type,
         "source_author_id": author_id,
         "source_round": str(source_round),
