@@ -4,9 +4,9 @@
 #SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=6
-#SBATCH --gpus-per-task=1
-#SBATCH --mem=48G
+#SBATCH --cpus-per-task=10
+#SBATCH --gpus-per-task=a40:1
+#SBATCH --mem=64G
 #SBATCH --time=01:00:00
 #SBATCH --job-name=ollama-gpu-oasis
 #SBATCH --output=ollama-gpu-oasis-%j.out
@@ -35,7 +35,12 @@ echo "Run directory: $RUN_DIR"
 module purge
 module load conda
 module load apptainer
-
+echo "Slurm GPU environment:"
+echo "  SLURM_JOB_GPUS=${SLURM_JOB_GPUS:-unset}"
+echo "  SLURM_STEP_GPUS=${SLURM_STEP_GPUS:-unset}"
+echo "  CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-unset}"
+echo "  NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-unset}"
+nvidia-smi -L || true
 source "$(conda info --base)/etc/profile.d/conda.sh"
 
 CONDA_ENV="${CONDA_ENV:-oasis}"
@@ -61,7 +66,7 @@ import oasis
 print(f"Imported oasis from: {getattr(oasis, '__file__', '<namespace package>')}")
 PY
 
-MODEL="${MODEL:-qwen2.5:0.5b-instruct}"
+MODEL="${MODEL:-qwen3.5:35b-a3b}"
 EXPERIMENT_NAME="${EXPERIMENT_NAME:-exp_$(date +%Y%m%d_%H%M%S)}"
 OLLAMA_NUM_PARALLEL="${OLLAMA_NUM_PARALLEL:-2}"
 OLLAMA_MAX_LOADED_MODELS="${OLLAMA_MAX_LOADED_MODELS:-1}"
@@ -100,6 +105,8 @@ export APPTAINERENV_OLLAMA_KEEP_ALIVE="$OLLAMA_KEEP_ALIVE"
 export APPTAINERENV_OLLAMA_SCHED_SPREAD="$OLLAMA_SCHED_SPREAD"
 if [ -n "${CUDA_VISIBLE_DEVICES:-}" ]; then
     export APPTAINERENV_CUDA_VISIBLE_DEVICES="$CUDA_VISIBLE_DEVICES"
+else
+    export APPTAINERENV_CUDA_VISIBLE_DEVICES=0
 fi
 
 # CPU threading hint for Python and Ollama.
