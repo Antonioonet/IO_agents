@@ -206,6 +206,38 @@ Return only valid JSON with this key:
   the same natural style as: "Author 123 is a ..." The paragraph should be
   specific enough to guide how this simulated user writes posts and replies.
 
+Here is some exemples of how the description should be written:
+1. TuskBot's personality can be described as critical, informative, and outspoken. 
+They frequently share news articles and opinions about politics, particularly focusing 
+on the Trump administration and its policies, highlighting issues such as COVID-19, tax 
+evasion, and social injustice. The content often includes strong language and criticism 
+of President Trump, accusing him of being a puppet for Putin and questioning his competence. 
+They also discuss various scandals and controversies surrounding his presidency, including 
+allegations of corruption and criminality. TuskBot seems to be passionate about these topics
+and is not afraid to use strong language to express their views."
+2. PorterSumari appears to be a strong supporter of President Trump and is concerned about 
+the current state of politics, particularly regarding issues such as corruption within 
+government institutions, crime, and the handling of the COVID-19 pandemic. They express 
+frustration with what they perceive as a lack of action against corrupt officials and criminals
+in positions of power. They also show support for law enforcement and advocate for actions like 
+releasing transcripts of criminal communications and arresting those involved in alleged crimes. 
+They seem to be critical of the media, specifically calling out certain journalists and news 
+sources. They express hope that President Trump will take action against these perceived threats
+and emphasize the importance of protecting citizens' safety and rights. They also show support
+for actions like pardoning Roger Stone. Overall, their personality can be described as passionate,
+patriotic, and determined
+3. Paladinette appears to be a critical and outspoken individual who is highly concerned about 
+the current state of the American economy, unemployment, and the well-being of its citizens. 
+They seem to express frustration with both major political parties for not addressing these 
+issues adequately and prioritizing Wall Street over the average citizen. They also criticize 
+President Trump and Joe Biden, accusing them of being out of touch with the struggles of everyday 
+Americans. They advocate for a more equitable distribution of economic aid and support for 
+programs like Medicare for All. They express skepticism towards the political establishment 
+and call for action on issues such as evictions, affordable housing, and ending wars. They 
+also criticize Trump's foreign policy decisions. Overall, they seem to be disillusioned with 
+the current state of American politics and are looking for a better alternative.
+
+
 Persona type: {persona_type}
 Author ID: {author_id}
 Profile metadata: {profile_text}
