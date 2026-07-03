@@ -17,8 +17,8 @@ import pandas as pd
 
 DEFAULT_MODEL = "qwen2.5:7b-instruct"
 DEFAULT_OLLAMA_URL = "http://localhost:11434"
-DEFAULT_AGENT_COUNT_IO = 10
-DEFAULT_AGENT_COUNT_USER = 40
+DEFAULT_AGENT_COUNT_IO = 1
+DEFAULT_AGENT_COUNT_USER = 1
 
 PROFILE_COLUMNS = ["user_id", "name", "username", "user_char", "description"]
 ENGLISH_POSTING_INSTRUCTION = "The user must always publish posts in English."
