@@ -14,7 +14,7 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="${PROJECT_DIR:-${SLURM_SUBMIT_DIR:-$(pwd)}}"
+SCRIPT_DIR="${PROJECT_DIR:-/project2/emiliofe_74/antonio/IO_agents/v0}"
 if [ ! -f "$SCRIPT_DIR/generate_russia_personas.py" ] && [ -d "$SCRIPT_DIR/IO_agents/v0" ]; then
     SCRIPT_DIR="$SCRIPT_DIR/IO_agents/v0"
 fi
@@ -22,7 +22,7 @@ RUN_DIR="${RUN_DIR:-/scratch1/$USER/oasis-runs/${SLURM_JOB_ID:-manual}}"
 
 if [ ! -f "$SCRIPT_DIR/generate_russia_personas.py" ] || [ ! -f "$SCRIPT_DIR/v0.py" ]; then
     echo "Could not find simulation scripts in: $SCRIPT_DIR"
-    echo "Submit from IO_agents/v0, or set PROJECT_DIR=/path/to/IO_agents/v0 when calling sbatch."
+    echo "Set PROJECT_DIR=/path/to/IO_agents/v0 if the default project path is not correct."
     exit 1
 fi
 
