@@ -43,12 +43,16 @@ echo "  NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-unset}"
 nvidia-smi -L || true
 source "$(conda info --base)/etc/profile.d/conda.sh"
 
-CONDA_ENV="${CONDA_ENV:-oasis}"
+CONDA_ENV="${CONDA_ENV:-/home1/ad_892/.conda/envs/oasis}"
 conda activate "$CONDA_ENV"
+hash -r
+export PYTHONNOUSERSITE=1
+unset PYTHONUSERBASE
 echo "$CONDA_ENV"
 echo "Python environment:"
 echo "  CONDA_DEFAULT_ENV=${CONDA_DEFAULT_ENV:-unset}"
 echo "  python=$(command -v python)"
+echo "  PYTHONNOUSERSITE=${PYTHONNOUSERSITE:-unset}"
 python - <<'PY'
 import importlib.util
 import site
@@ -56,8 +60,11 @@ import sys
 
 print(f"  sys.executable={sys.executable}")
 print(f"  sys.version={sys.version.split()[0]}")
+print(f"  user_site_enabled={site.ENABLE_USER_SITE}")
 print(f"  user_site={site.getusersitepackages()}")
 print(f"  oasis_spec={importlib.util.find_spec('oasis')}")
+if "/.conda/envs/oasis/" not in sys.executable and "/conda_envs/oasis/" not in sys.executable:
+    raise SystemExit(f"Active python is not from the oasis env: {sys.executable}")
 PY
 
 python - <<'PY'
