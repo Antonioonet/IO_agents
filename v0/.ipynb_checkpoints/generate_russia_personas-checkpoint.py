@@ -17,8 +17,8 @@ import pandas as pd
 
 DEFAULT_MODEL = "qwen2.5:7b-instruct"
 DEFAULT_OLLAMA_URL = "http://localhost:11434"
-DEFAULT_AGENT_COUNT_IO = 1
-DEFAULT_AGENT_COUNT_USER = 1
+DEFAULT_AGENT_COUNT_IO = 10
+DEFAULT_AGENT_COUNT_USER = 40
 
 PROFILE_COLUMNS = ["user_id", "name", "username", "user_char", "description"]
 ENGLISH_POSTING_INSTRUCTION = "The user must always publish posts in English."
@@ -200,11 +200,11 @@ Base the profile only on the provided tweets and metadata. Do not invent private
 biographical facts, hidden affiliations, names, locations, or offline activity.
 Preserve culturally relevant signals, but always write the final persona in English.
 
-Return only valid JSON with this key:
-- description: one long paragraph in English, with no section labels or bullet points.
-  Start the paragraph with "Author {author_id}" and describe the user's behavior in
-  the same natural style as: "Author 123 is a ..." The paragraph should be
-  specific enough to guide how this simulated user writes posts and replies.
+Return only the persona description as plain text. Do not use JSON, markdown, bullet
+points, headings, or code fences. Write one long paragraph in English, with no section
+labels. Start the paragraph with "Author {author_id}" and describe the user's behavior
+in the same natural style as: "Author 123 is a ..." The paragraph should be specific
+enough to guide how this simulated user writes posts and replies.
 
 Here is some exemples of how the description should be written:
 1. TuskBot's personality can be described as critical, informative, and outspoken. 
@@ -259,7 +259,6 @@ def call_ollama(
         "model": model,
         "prompt": prompt,
         "stream": False,
-        "format": "json",
         "options": {"temperature": 0.0},
     }
     data = json.dumps(payload).encode("utf-8")
@@ -284,8 +283,16 @@ def call_ollama(
 
 
 def parse_llm_response(response_text: str) -> Dict[str, str]:
-    parsed = json.loads(response_text)
-    description = clean_field(parsed.get("description", ""))
+    description = clean_field(response_text)
+    if description.startswith("```") and description.endswith("```"):
+        description = clean_field(description.strip("`"))
+    try:
+        parsed = json.loads(description)
+    except json.JSONDecodeError:
+        pass
+    else:
+        if isinstance(parsed, dict) and parsed.get("description"):
+            description = clean_field(parsed["description"])
     if not description:
         raise ValueError("LLM response must include a non-empty description.")
     return {"description": description}

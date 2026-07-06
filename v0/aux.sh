@@ -66,9 +66,9 @@ import oasis
 print(f"Imported oasis from: {getattr(oasis, '__file__', '<namespace package>')}")
 PY
 
-MODEL="${MODEL:-gemma4:31b}"
+MODEL="${MODEL:-qwen3.6:35b-a3b-mtp-q4_K_M}"
 EXPERIMENT_NAME="${EXPERIMENT_NAME:-exp_$(date +%Y%m%d_%H%M%S)}"
-OLLAMA_NUM_PARALLEL="${OLLAMA_NUM_PARALLEL:-2}"
+OLLAMA_NUM_PARALLEL="${OLLAMA_NUM_PARALLEL:-16}"
 OLLAMA_MAX_LOADED_MODELS="${OLLAMA_MAX_LOADED_MODELS:-1}"
 OLLAMA_MAX_QUEUE="${OLLAMA_MAX_QUEUE:-512}"
 OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:--1}"
@@ -246,7 +246,7 @@ python "$SCRIPT_DIR/v0.py" \
     --model "$MODEL" \
     --ollama-url "$OLLAMA_OPENAI_URL" \
     --experiment-name "$EXPERIMENT_NAME" \
-    --llm-steps 1
+    --llm-steps 20
      
 
 echo "GPU OASIS run finished successfully."
