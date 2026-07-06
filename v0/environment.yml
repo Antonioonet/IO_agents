@@ -6,6 +6,7 @@ dependencies:
   - pip
   - pandas
   - typing_extensions
+  - typing-inspection
   - pip:
       - camel-ai
       - camel-oasis
