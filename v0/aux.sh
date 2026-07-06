@@ -45,12 +45,19 @@ source "$(conda info --base)/etc/profile.d/conda.sh"
 
 CONDA_ENV="${CONDA_ENV:-/home1/ad_892/.conda/envs/oasis}"
 conda activate "$CONDA_ENV"
+if [ ! -x "$CONDA_ENV/bin/python" ]; then
+    echo "Conda environment does not contain an executable python: $CONDA_ENV/bin/python"
+    echo "Check the environment path or recreate it with the expected Python version."
+    exit 1
+fi
+export PATH="$CONDA_ENV/bin:$PATH"
 hash -r
 export PYTHONNOUSERSITE=1
 unset PYTHONUSERBASE
 echo "$CONDA_ENV"
 echo "Python environment:"
 echo "  CONDA_DEFAULT_ENV=${CONDA_DEFAULT_ENV:-unset}"
+echo "  CONDA_PREFIX=${CONDA_PREFIX:-unset}"
 echo "  python=$(command -v python)"
 echo "  PYTHONNOUSERSITE=${PYTHONNOUSERSITE:-unset}"
 python - <<'PY'
