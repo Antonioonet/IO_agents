@@ -59,6 +59,11 @@ def parse_args() -> argparse.Namespace:
         default=0,
         help="Random seed for normal mode.",
     )
+    parser.add_argument(
+        "--samples",
+        type=int,
+        help="Number of probability rows to generate in normal mode. Defaults to one row per user.",
+    )
     return parser.parse_args()
 
 
@@ -152,10 +157,18 @@ def generate_empirical_probabilities(df: pd.DataFrame, threshold: int) -> pd.Dat
     return counts_to_probability_rows(eligible_counts)
 
 
-def generate_normal_probabilities(df: pd.DataFrame, seed: int) -> pd.DataFrame:
+def generate_normal_probabilities(
+    df: pd.DataFrame,
+    seed: int,
+    samples_count: int | None,
+) -> pd.DataFrame:
     counts = calculate_action_counts(df)
     counts = counts[counts.sum(axis=1) > 0]
-    user_ids = counts.index.to_list()
+    if samples_count is not None and samples_count <= 0:
+        raise ValueError("--samples must be greater than 0.")
+
+    samples_count = samples_count or len(counts)
+    user_ids = list(range(1, samples_count + 1))
     proportions = counts.div(counts.sum(axis=1), axis=0)
 
     means = proportions.mean()
@@ -164,7 +177,7 @@ def generate_normal_probabilities(df: pd.DataFrame, seed: int) -> pd.DataFrame:
     samples = rng.normal(
         loc=means.to_numpy(),
         scale=stds.to_numpy(),
-        size=(len(user_ids), len(ACTION_COLUMNS)),
+        size=(samples_count, len(ACTION_COLUMNS)),
     )
     samples = np.clip(samples, 0.0, None)
     row_totals = samples.sum(axis=1)
@@ -187,7 +200,7 @@ def main() -> None:
     if args.mode == "action":
         output = generate_empirical_probabilities(df, args.threshold)
     else:
-        output = generate_normal_probabilities(df, args.seed)
+        output = generate_normal_probabilities(df, args.seed, args.samples)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     output.to_csv(args.output, index=False)
