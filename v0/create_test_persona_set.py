@@ -1,6 +1,8 @@
 import argparse
 import csv
 import random
+import re
+from datetime import datetime
 from pathlib import Path
 
 
@@ -19,8 +21,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--experiment-dir",
         type=Path,
-        required=True,
+        default=None,
         help="Experiment folder containing personas_io_drivers.csv and personas_normal_users.csv.",
+    )
+    parser.add_argument(
+        "--experiment-name",
+        default=None,
+        help="Name for a new timestamped output experiment folder when --output-dir is omitted.",
+    )
+    parser.add_argument(
+        "--experiments-dir",
+        type=Path,
+        default=base_dir / "experiments",
+        help="Base experiments folder used for timestamped output folders.",
+    )
+    parser.add_argument(
+        "--source-experiment-dir",
+        type=Path,
+        default=None,
+        help="Source experiment folder containing the full persona CSVs. Defaults to --experiment-dir.",
     )
     parser.add_argument("--io-count", type=int, default=DEFAULT_COUNT)
     parser.add_argument("--normal-count", type=int, default=DEFAULT_COUNT)
@@ -55,6 +74,16 @@ def parse_args() -> argparse.Namespace:
         help=argparse.SUPPRESS,
     )
     return parser.parse_args()
+
+
+def normalize_experiment_name(experiment_name: str | None) -> str:
+    if not experiment_name:
+        experiment_name = "test_" + datetime.now().strftime("%Y%m%d_%H%M%S")
+    normalized = re.sub(r"[^A-Za-z0-9_.-]+", "_", experiment_name.strip())
+    normalized = normalized.strip("._-")
+    if not normalized:
+        raise ValueError("Experiment name must include at least one letter or number.")
+    return normalized
 
 
 def read_csv(path: Path) -> list[dict[str, str]]:
@@ -181,16 +210,26 @@ def load_persona_rows(experiment_dir: Path, label: str) -> list[dict[str, str]]:
 def main() -> None:
     args = parse_args()
     rng = random.Random(args.seed)
-    output_dir = args.output_dir or args.experiment_dir / "test_4_each"
+    source_experiment_dir = args.source_experiment_dir or args.experiment_dir
+    if source_experiment_dir is None:
+        raise ValueError(
+            "Provide --source-experiment-dir or --experiment-dir with the full persona CSVs."
+        )
+    if args.output_dir is not None:
+        output_dir = args.output_dir
+    elif args.experiment_dir is not None:
+        output_dir = args.experiment_dir / "test_4_each"
+    else:
+        output_dir = args.experiments_dir / normalize_experiment_name(args.experiment_name)
 
     io_rows = select_rows(
-        load_persona_rows(args.experiment_dir, "io_drivers"),
+        load_persona_rows(source_experiment_dir, "io_drivers"),
         args.io_count,
         rng,
         args.sample,
     )
     normal_rows = select_rows(
-        load_persona_rows(args.experiment_dir, "normal_users"),
+        load_persona_rows(source_experiment_dir, "normal_users"),
         args.normal_count,
         rng,
         args.sample,
