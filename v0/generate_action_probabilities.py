@@ -14,15 +14,15 @@ def parse_args() -> argparse.Namespace:
         description=(
             "Generate per-user action probability CSVs from tweet datasets. "
             "Default mode uses each eligible user's empirical action proportions; "
-            "normal mode samples per-user probabilities from dataset-level normal "
-            "distributions."
+            "normal mode samples per-user probabilities from a dataset-level "
+            "Dirichlet distribution."
         )
     )
     parser.add_argument(
         "--mode",
         choices=("action", "normal"),
         default="action",
-        help="Generation mode. action uses empirical user proportions; normal samples from dataset-level normal distributions.",
+        help="Generation mode. action uses empirical user proportions; normal samples from a dataset-level Dirichlet distribution.",
     )
     parser.add_argument(
         "--input",
@@ -188,26 +188,37 @@ def generate_normal_probabilities(
     user_ids = list(range(1, samples_count + 1))
     proportions = counts.div(counts.sum(axis=1), axis=0)
 
-    means = proportions.mean()
-    stds = proportions.std().fillna(0.0)
+    alpha = estimate_dirichlet_alpha(proportions)
     rng = np.random.default_rng(seed)
-    samples = rng.normal(
-        loc=means.to_numpy(),
-        scale=stds.to_numpy(),
-        size=(samples_count, len(ACTION_COLUMNS)),
-    )
-    samples = np.clip(samples, 0.0, None)
-    row_totals = samples.sum(axis=1)
-    zero_rows = row_totals <= 0
-    if zero_rows.any():
-        samples[zero_rows] = means.to_numpy()
-        row_totals = samples.sum(axis=1)
-    samples = samples / row_totals[:, None]
+    samples = rng.dirichlet(alpha, size=samples_count)
 
     output = pd.DataFrame(samples, columns=ACTION_COLUMNS)
     output.insert(0, "user_id", user_ids)
     output.insert(1, "p_action", 0.0)
     return output[["user_id", "p_action", *ACTION_COLUMNS]]
+
+
+def estimate_dirichlet_alpha(proportions: pd.DataFrame) -> np.ndarray:
+    means = proportions.mean().to_numpy(dtype=float)
+    means = np.clip(means, 1e-6, None)
+    means = means / means.sum()
+
+    variances = proportions.var(ddof=1).fillna(0.0).to_numpy(dtype=float)
+    concentration_estimates = []
+    for mean, variance in zip(means, variances):
+        if variance <= 0:
+            continue
+        estimate = mean * (1.0 - mean) / variance - 1.0
+        if np.isfinite(estimate) and estimate > 0:
+            concentration_estimates.append(estimate)
+
+    if concentration_estimates:
+        concentration = float(np.median(concentration_estimates))
+    else:
+        concentration = 100.0
+
+    concentration = float(np.clip(concentration, 20.0, 1000.0))
+    return np.clip(means * concentration, 0.05, None)
 
 
 def main() -> None:
