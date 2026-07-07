@@ -15,9 +15,13 @@ from oasis import ActionType, LLMAction, ManualAction, generate_twitter_agent_gr
 
 from utils import (
     append_action_probability_prompts_to_personas,
+    build_calibrated_llm_actions,
     build_probabilistic_llm_actions,
+    estimate_implicit_priors,
     load_action_probabilities,
+    load_implicit_priors,
     restrict_agents_to_sampled_actions,
+    write_implicit_priors,
 )
 
 
@@ -26,6 +30,7 @@ from utils import (
 DEFAULT_EXPERIMENT_NAME = "exp_20260630_141203"
 REQUIRED_PERSONA_COLUMNS = {"name", "username", "user_char", "description"}
 ALLOWED_TWITTER_ACTIONS = {
+    "no_action": ("DO_NOTHING",),
     "post": ("CREATE_POST",),
     "reply": ("CREATE_COMMENT", "REPLY_POST"),
     "retweet": ("REPOST", "RETWEET", "RETWEET_POST"),
@@ -82,25 +87,61 @@ def parse_args():
     )
     parser.add_argument(
         "--action-mode",
-        choices=("natural", "prompt_probabilities", "autonomous"),
+        choices=("natural", "prompt_probabilities", "autonomous", "calibrated"),
         default="natural",
         help=(
             "Action control mode. natural gives agents the normal prompt; "
             "prompt_probabilities adds probabilities to personas; autonomous "
-            "hard-samples act/skip and action type before each step."
+            "hard-samples act/skip and action type before each step; calibrated "
+            "uses Bayesian prior correction with one-hot natural LLM choices."
         ),
     )
     parser.add_argument(
         "--action-probabilities-path",
         type=Path,
         default=None,
-        help="CSV with user_id/username, p_action, post, reply, and retweet columns. Required for prompt_probabilities and autonomous modes.",
+        help="CSV with user_id/username, p_action, post, reply, and retweet columns. Required for probability-based modes.",
     )
     parser.add_argument(
         "--action-seed",
         type=int,
         default=0,
-        help="Random seed for autonomous hard probability sampling.",
+        help="Random seed for autonomous and calibrated action sampling.",
+    )
+    parser.add_argument(
+        "--calibration-beta",
+        type=float,
+        default=1.0,
+        help="Beta strength for calibrated mode. 0 follows empirical priors; larger values preserve more natural LLM choice signal.",
+    )
+    parser.add_argument(
+        "--implicit-priors-path",
+        type=Path,
+        default=None,
+        help="CSV cache for calibrated model priors with user_id,no_action,post,reply,retweet columns.",
+    )
+    parser.add_argument(
+        "--estimate-priors",
+        action="store_true",
+        help="Estimate calibrated implicit priors and write them to --implicit-priors-path before simulation.",
+    )
+    parser.add_argument(
+        "--prior-samples",
+        type=int,
+        default=10,
+        help="Number of random pickle feed snapshots per user for calibrated prior estimation.",
+    )
+    parser.add_argument(
+        "--prior-feed-path",
+        type=Path,
+        default=None,
+        help="Pickle dataset used to build random feed snapshots for calibrated prior estimation.",
+    )
+    parser.add_argument(
+        "--feed-snapshot-size",
+        type=int,
+        default=25,
+        help="Number of tweets to include in each random feed snapshot for calibrated prior estimation.",
     )
     return parser.parse_args()
 
@@ -243,12 +284,28 @@ async def main():
     if args.action_mode == "natural" and args.action_probabilities_path is not None:
         raise ValueError(
             "--action-probabilities-path is only valid with "
-            "--action-mode prompt_probabilities or --action-mode autonomous."
+            "--action-mode prompt_probabilities, --action-mode autonomous, "
+            "or --action-mode calibrated."
         )
     if args.action_mode != "natural" and args.action_probabilities_path is None:
         raise ValueError(
             f"--action-probabilities-path is required with --action-mode {args.action_mode}."
         )
+    if args.action_mode != "calibrated":
+        if args.implicit_priors_path is not None or args.estimate_priors:
+            raise ValueError(
+                "--implicit-priors-path and --estimate-priors are only valid "
+                "with --action-mode calibrated."
+            )
+    if args.action_mode == "calibrated":
+        if args.implicit_priors_path is None:
+            raise ValueError(
+                "--implicit-priors-path is required with --action-mode calibrated."
+            )
+        if args.estimate_priors and args.prior_feed_path is None:
+            raise ValueError(
+                "--prior-feed-path is required when using --estimate-priors."
+            )
 
     action_probabilities = None
     if args.action_probabilities_path is not None:
@@ -290,6 +347,34 @@ async def main():
         available_actions=available_actions
     )
 
+    implicit_priors = None
+    if args.action_mode == "calibrated":
+        prior_rng = random.Random(args.action_seed)
+        if args.estimate_priors:
+            implicit_priors = await estimate_implicit_priors(
+                agent_graph.get_agents(),
+                args.prior_feed_path,
+                args.prior_samples,
+                args.feed_snapshot_size,
+                prior_rng,
+            )
+            write_implicit_priors(args.implicit_priors_path, implicit_priors)
+            print(
+                f"Estimated implicit priors for {len(implicit_priors)} agents "
+                f"and wrote them to {args.implicit_priors_path}"
+            )
+        else:
+            if not args.implicit_priors_path.exists():
+                raise FileNotFoundError(
+                    f"Implicit prior CSV not found: {args.implicit_priors_path}. "
+                    "Use --estimate-priors with --prior-feed-path to create it."
+                )
+            implicit_priors = load_implicit_priors(args.implicit_priors_path)
+            print(
+                f"Loaded implicit priors for {len(implicit_priors)} agents from "
+                f"{args.implicit_priors_path}"
+            )
+
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     db_path = database_dir / f"{experiment_label}_{run_id}.db"
 
@@ -307,6 +392,17 @@ async def main():
             actions, sampled_actions = build_probabilistic_llm_actions(
                 env.agent_graph.get_agents(),
                 action_probabilities,
+                action_rng,
+                LLMAction,
+            )
+            with restrict_agents_to_sampled_actions(sampled_actions):
+                await env.step(actions)
+        elif args.action_mode == "calibrated":
+            actions, sampled_actions, llm_actions = await build_calibrated_llm_actions(
+                env.agent_graph.get_agents(),
+                action_probabilities,
+                implicit_priors,
+                args.calibration_beta,
                 action_rng,
                 LLMAction,
             )
