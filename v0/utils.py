@@ -9,22 +9,20 @@ from typing import Mapping
 ACTION_TOOL_NAMES = {
     "post": "create_post",
     "reply": "create_comment",
-    "quote": "quote_post",
     "retweet": "repost",
-    "do_nothing": "do_nothing",
 }
+ACTION_FREQUENCY_COLUMNS = ("p_action",)
 PROBABILITY_COLUMNS = {
     "post": ("post", "prob_post", "p_post"),
     "reply": ("reply", "prob_reply", "p_reply"),
-    "quote": ("quote", "prob_quote", "p_quote"),
     "retweet": ("retweet", "prob_retweet", "p_retweet"),
-    "do_nothing": ("do_nothing", "prob_do_nothing", "p_do_nothing"),
 }
 
 
 @dataclass(frozen=True)
 class UserActionProbabilities:
     identifier: str
+    action_probability: float
     probabilities: dict[str, float]
 
 
@@ -51,14 +49,25 @@ def load_action_probabilities(path: Path) -> dict[str, UserActionProbabilities]:
                 action: read_probability(row, aliases, path, line_number)
                 for action, aliases in PROBABILITY_COLUMNS.items()
             }
+            action_probability = read_required_probability(
+                row,
+                ACTION_FREQUENCY_COLUMNS,
+                path,
+                line_number,
+            )
+            if action_probability > 1:
+                raise ValueError(
+                    f"{path}:{line_number} p_action must be between 0 and 1."
+                )
             total = sum(probabilities.values())
             if total <= 0:
                 raise ValueError(
-                    f"{path}:{line_number} probabilities must sum to more than 0."
+                    f"{path}:{line_number} action probabilities must sum to more than 0."
                 )
 
             rows[identifier] = UserActionProbabilities(
                 identifier=identifier,
+                action_probability=action_probability,
                 probabilities={action: value / total for action, value in probabilities.items()},
             )
 
@@ -94,6 +103,71 @@ def read_probability(
     return 0.0
 
 
+def read_required_probability(
+    row: Mapping[str, str],
+    aliases: tuple[str, ...],
+    path: Path,
+    line_number: int,
+) -> float:
+    if any(row.get(alias) not in (None, "") for alias in aliases):
+        return read_probability(row, aliases, path, line_number)
+    raise ValueError(
+        f"{path}:{line_number} must include probability column: {aliases[0]}."
+    )
+
+
+def format_action_probability_prompt(
+    probabilities: UserActionProbabilities,
+) -> str:
+    return (
+        "\n\nBehavioral calibration: pay close attention to these target "
+        "probabilities and try to follow them across repeated simulation steps. "
+        "They are important guidance for your action choices, while your persona "
+        "and the current context should still determine what is natural in each "
+        "specific situation.\n"
+        f"- Probability of taking any action: {probabilities.action_probability:.4f}\n"
+        "- If you take an action, use these target action frequencies:\n"
+        f"  - post: {probabilities.probabilities['post']:.4f}\n"
+        f"  - reply: {probabilities.probabilities['reply']:.4f}\n"
+        f"  - retweet: {probabilities.probabilities['retweet']:.4f}"
+    )
+
+
+def persona_probability_keys(row: Mapping[str, str]) -> list[str]:
+    keys = []
+    for column in ("username", "user_id", "agent_id", "name"):
+        value = clean_identifier(row.get(column))
+        if value:
+            keys.append(value)
+    return keys
+
+
+def append_action_probability_prompts_to_personas(
+    rows: list[dict[str, str]],
+    action_probabilities: Mapping[str, UserActionProbabilities],
+) -> list[dict[str, str]]:
+    prompted_rows = []
+    for row in rows:
+        keys = persona_probability_keys(row)
+        probabilities = next(
+            (action_probabilities[key] for key in keys if key in action_probabilities),
+            None,
+        )
+        if probabilities is None:
+            raise KeyError(
+                f"No action probabilities found for persona keys: {', '.join(keys)}"
+            )
+
+        prompted_row = dict(row)
+        prompted_row["description"] = (
+            prompted_row.get("description", "")
+            + format_action_probability_prompt(probabilities)
+        )
+        prompted_rows.append(prompted_row)
+
+    return prompted_rows
+
+
 def agent_probability_key(agent) -> str:
     username = getattr(getattr(agent, "user_info", None), "name", None)
     if username:
@@ -104,7 +178,10 @@ def agent_probability_key(agent) -> str:
 def sample_user_action(
     probabilities: UserActionProbabilities,
     rng: random.Random,
-) -> str:
+) -> str | None:
+    if rng.random() >= probabilities.action_probability:
+        return None
+
     actions = list(probabilities.probabilities)
     weights = [probabilities.probabilities[action] for action in actions]
     return rng.choices(actions, weights=weights, k=1)[0]
@@ -136,7 +213,7 @@ def build_probabilistic_llm_actions(
 
         sampled_action = sample_user_action(probabilities, rng)
         sampled_actions[agent] = sampled_action
-        if sampled_action != "do_nothing":
+        if sampled_action is not None:
             actions[agent] = llm_action_factory()
 
     return actions, sampled_actions
@@ -147,7 +224,7 @@ def restrict_agents_to_sampled_actions(sampled_actions: Mapping):
     original_tool_dicts = {}
     try:
         for agent, sampled_action in sampled_actions.items():
-            if sampled_action == "do_nothing":
+            if sampled_action is None:
                 continue
             tool_name = ACTION_TOOL_NAMES[sampled_action]
             tool_dict = getattr(agent, "_internal_tools", None)

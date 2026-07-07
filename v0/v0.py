@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import csv
+import random
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -12,6 +13,13 @@ from camel.models import ModelFactory
 from camel.types import ModelPlatformType
 from oasis import ActionType, LLMAction, ManualAction, generate_twitter_agent_graph
 
+from utils import (
+    append_action_probability_prompts_to_personas,
+    build_probabilistic_llm_actions,
+    load_action_probabilities,
+    restrict_agents_to_sampled_actions,
+)
+
 
 
 
@@ -20,7 +28,6 @@ REQUIRED_PERSONA_COLUMNS = {"name", "username", "user_char", "description"}
 ALLOWED_TWITTER_ACTIONS = {
     "post": ("CREATE_POST",),
     "reply": ("CREATE_COMMENT", "REPLY_POST"),
-    "quote": ("QUOTE_POST", "CREATE_QUOTE"),
     "retweet": ("REPOST", "RETWEET", "RETWEET_POST"),
 }
 
@@ -73,6 +80,28 @@ def parse_args():
         default=1,
         help="Number of LLM-driven simulation steps to run after the seed post.",
     )
+    parser.add_argument(
+        "--action-mode",
+        choices=("natural", "prompt_probabilities", "autonomous"),
+        default="natural",
+        help=(
+            "Action control mode. natural gives agents the normal prompt; "
+            "prompt_probabilities adds probabilities to personas; autonomous "
+            "hard-samples act/skip and action type before each step."
+        ),
+    )
+    parser.add_argument(
+        "--action-probabilities-path",
+        type=Path,
+        default=None,
+        help="CSV with user_id/username, p_action, post, reply, and retweet columns. Required for prompt_probabilities and autonomous modes.",
+    )
+    parser.add_argument(
+        "--action-seed",
+        type=int,
+        default=0,
+        help="Random seed for autonomous hard probability sampling.",
+    )
     return parser.parse_args()
 
 
@@ -123,6 +152,7 @@ def write_temp_profiles(rows: list[dict[str, str]]) -> tempfile.NamedTemporaryFi
     writer = csv.DictWriter(
         temp_file,
         fieldnames=["user_id", "name", "username", "user_char", "description"],
+        extrasaction="ignore",
     )
     writer.writeheader()
     writer.writerows(rows)
@@ -184,7 +214,7 @@ async def main():
     args = parse_args()
 
     data_path, experiment_label = resolve_profile_path(args, base_dir)
-    temp_profile = None
+    temp_profiles = []
     if args.profile_path is not None:
         io_profile_path = None
         normal_profile_path = None
@@ -199,6 +229,7 @@ async def main():
     if io_profile_path is not None and normal_profile_path is not None:
         combined_rows = combine_profile_rows([io_profile_path, normal_profile_path])
         temp_profile = write_temp_profiles(combined_rows)
+        temp_profiles.append(temp_profile)
         data_path = Path(temp_profile.name)
         print(
             f"Combined {len(combined_rows)} personas in memory from "
@@ -209,6 +240,32 @@ async def main():
         raise FileNotFoundError(f"Persona profile file not found: {data_path}")
     if args.llm_steps < 0:
         raise ValueError("--llm-steps must be 0 or greater.")
+    if args.action_mode == "natural" and args.action_probabilities_path is not None:
+        raise ValueError(
+            "--action-probabilities-path is only valid with "
+            "--action-mode prompt_probabilities or --action-mode autonomous."
+        )
+    if args.action_mode != "natural" and args.action_probabilities_path is None:
+        raise ValueError(
+            f"--action-probabilities-path is required with --action-mode {args.action_mode}."
+        )
+
+    action_probabilities = None
+    if args.action_probabilities_path is not None:
+        action_probabilities = load_action_probabilities(args.action_probabilities_path)
+
+    if args.action_mode == "prompt_probabilities":
+        prompted_rows = append_action_probability_prompts_to_personas(
+            read_personas(data_path),
+            action_probabilities,
+        )
+        temp_profile = write_temp_profiles(prompted_rows)
+        temp_profiles.append(temp_profile)
+        data_path = Path(temp_profile.name)
+        print(
+            f"Added action probability prompts to {len(prompted_rows)} personas from "
+            f"{args.action_probabilities_path}"
+        )
 
     database_dir = args.database_dir
     database_dir.mkdir(parents=True, exist_ok=True)
@@ -244,17 +301,28 @@ async def main():
 
     await env.reset()
 
+    action_rng = random.Random(args.action_seed)
     for step in range(args.llm_steps):
-        actions = {
-            agent: LLMAction()
-            for _, agent in env.agent_graph.get_agents()
-        }
-        await env.step(actions)
+        if args.action_mode == "autonomous":
+            actions, sampled_actions = build_probabilistic_llm_actions(
+                env.agent_graph.get_agents(),
+                action_probabilities,
+                action_rng,
+                LLMAction,
+            )
+            with restrict_agents_to_sampled_actions(sampled_actions):
+                await env.step(actions)
+        else:
+            actions = {
+                agent: LLMAction()
+                for _, agent in env.agent_graph.get_agents()
+            }
+            await env.step(actions)
         print(f"Completed LLM simulation step {step + 1}/{args.llm_steps}")
 
     # Close the environment
     await env.close()
-    if temp_profile is not None:
+    for temp_profile in temp_profiles:
         temp_profile.close()
         Path(temp_profile.name).unlink(missing_ok=True)
 
