@@ -59,6 +59,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ollama-url", default=DEFAULT_OLLAMA_URL)
     parser.add_argument("--min-tweets", type=int, default=20)
     parser.add_argument("--comparison", choices=("ge", "gt"), default="ge")
+    parser.add_argument(
+        "--io-hard-action-filter-threshold",
+        type=int,
+        default=None,
+        help=(
+            "If set, only use IO source users with more than this many posts, "
+            "replies, and retweets each."
+        ),
+    )
+    parser.add_argument(
+        "--normal-hard-action-filter-threshold",
+        type=int,
+        default=None,
+        help=(
+            "If set, only use normal source users with more than this many posts, "
+            "replies, and retweets each."
+        ),
+    )
     parser.add_argument("--sample-size", type=int, default=15)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--workers", type=int, default=1)
@@ -102,20 +120,72 @@ def read_tweets_pickle(path: Path) -> Dict[str, Dict[str, object]]:
         "user_reported_location",
         "tweet_language",
     ]
+    df = add_tweet_type(df)
     for row in df.itertuples(index=False):
         row_data = row._asdict()
         user_id = clean_field(row_data.get("userid", ""))
         text = normalize_tweet(row_data.get("tweet_text", ""))
         if not user_id or not text:
             continue
-        user = users.setdefault(user_id, {"tweets": [], "profile": {}})
+        tweet_type = clean_field(row_data.get("tweet_type", "post"))
+        if tweet_type == "tweet":
+            tweet_type = "post"
+        if tweet_type not in ("post", "reply", "retweet"):
+            continue
+
+        user = users.setdefault(
+            user_id,
+            {
+                "tweets": [],
+                "tweets_by_action": {"post": [], "reply": [], "retweet": []},
+                "profile": {},
+            },
+        )
         user["tweets"].append(text)
+        user["tweets_by_action"][tweet_type].append(text)
         profile = user["profile"]
         for column in profile_columns:
             value = clean_field(row_data.get(column, ""))
             if value and not profile.get(column):
                 profile[column] = value
     return users
+
+
+def add_tweet_type(df: pd.DataFrame) -> pd.DataFrame:
+    if "tweet_type" in df.columns:
+        df = df.copy()
+        df["tweet_type"] = df["tweet_type"].replace({"tweet": "post"})
+        return df
+
+    tweet_type = pd.Series("post", index=df.index)
+
+    def has_value(series: pd.Series) -> pd.Series:
+        text = series.astype("string").str.strip().str.lower()
+        missing_text = text.isin(["", "nan", "none", "null", "na", "n/a", "<na>"])
+        return series.notna() & ~missing_text
+
+    def is_true(series: pd.Series) -> pd.Series:
+        if pd.api.types.is_bool_dtype(series):
+            return series.fillna(False)
+        text = series.astype("string").str.strip().str.lower()
+        return text.isin(["true", "1", "t", "yes", "y"])
+
+    if "in_reply_to_tweetid" in df.columns:
+        tweet_type = tweet_type.mask(has_value(df["in_reply_to_tweetid"]), "reply")
+    elif "in_reply_to_userid" in df.columns:
+        tweet_type = tweet_type.mask(has_value(df["in_reply_to_userid"]), "reply")
+
+    if "is_retweet" in df.columns:
+        retweet_mask = is_true(df["is_retweet"])
+        if "retweet_tweetid" in df.columns:
+            retweet_mask = retweet_mask | has_value(df["retweet_tweetid"])
+        tweet_type = tweet_type.mask(retweet_mask, "retweet")
+    elif "retweet_tweetid" in df.columns:
+        tweet_type = tweet_type.mask(has_value(df["retweet_tweetid"]), "retweet")
+
+    df = df.copy()
+    df["tweet_type"] = tweet_type
+    return df
 
 
 def normalize_tweet(text: object) -> str:
@@ -136,15 +206,30 @@ def is_eligible(tweet_count: int, min_tweets: int, comparison: str) -> bool:
     return tweet_count >= min_tweets
 
 
+def passes_hard_action_filter(
+    user: Dict[str, object],
+    threshold: Optional[int],
+) -> bool:
+    if threshold is None:
+        return True
+    tweets_by_action = user.get("tweets_by_action", {})
+    return all(
+        len(tweets_by_action.get(action, [])) > threshold
+        for action in ("post", "reply", "retweet")
+    )
+
+
 def iter_eligible_authors(
     users: Dict[str, Dict[str, object]],
     min_tweets: int,
     comparison: str,
+    hard_action_filter_threshold: Optional[int],
 ) -> Iterable[str]:
     eligible = [
         user_id
         for user_id, user in users.items()
         if is_eligible(len(user["tweets"]), min_tweets, comparison)
+        and passes_hard_action_filter(user, hard_action_filter_threshold)
     ]
     eligible.sort()
     return eligible
@@ -383,8 +468,18 @@ def generate_group(
     agent_count: int,
     args: argparse.Namespace,
 ) -> List[Dict[str, str]]:
+    hard_action_filter_threshold = (
+        args.io_hard_action_filter_threshold
+        if persona_type == "io_driver"
+        else args.normal_hard_action_filter_threshold
+    )
     eligible_authors = list(
-        iter_eligible_authors(users, args.min_tweets, args.comparison)
+        iter_eligible_authors(
+            users,
+            args.min_tweets,
+            args.comparison,
+            hard_action_filter_threshold,
+        )
     )
     seed = args.seed if persona_type == "io_driver" else args.seed + 10_000
     agent_specs = build_agent_specs(eligible_authors, agent_count, seed)
@@ -486,6 +581,8 @@ def write_manifest(
         "ollama_url": args.ollama_url,
         "min_tweets": args.min_tweets,
         "comparison": args.comparison,
+        "io_hard_action_filter_threshold": args.io_hard_action_filter_threshold,
+        "normal_hard_action_filter_threshold": args.normal_hard_action_filter_threshold,
         "sample_size": args.sample_size,
         "seed": args.seed,
         "generation_errors": sum(
