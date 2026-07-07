@@ -62,7 +62,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--samples",
         type=int,
-        help="Number of probability rows to generate in normal mode. Defaults to one row per user.",
+        help="Number of probability rows to generate. Defaults to one row per eligible/user row.",
     )
     return parser.parse_args()
 
@@ -146,7 +146,18 @@ def counts_to_probability_rows(counts: pd.DataFrame) -> pd.DataFrame:
     return output[["user_id", "p_action", *ACTION_COLUMNS]]
 
 
-def generate_empirical_probabilities(df: pd.DataFrame, threshold: int) -> pd.DataFrame:
+def validate_samples_count(samples_count: int | None) -> None:
+    if samples_count is not None and samples_count <= 0:
+        raise ValueError("--samples must be greater than 0.")
+
+
+def generate_empirical_probabilities(
+    df: pd.DataFrame,
+    threshold: int,
+    seed: int,
+    samples_count: int | None,
+) -> pd.DataFrame:
+    validate_samples_count(samples_count)
     counts = calculate_action_counts(df)
     eligible = (
         (counts["post"] > threshold)
@@ -154,7 +165,15 @@ def generate_empirical_probabilities(df: pd.DataFrame, threshold: int) -> pd.Dat
         & (counts["retweet"] > threshold)
     )
     eligible_counts = counts[eligible]
-    return counts_to_probability_rows(eligible_counts)
+    output = counts_to_probability_rows(eligible_counts)
+
+    if samples_count is None:
+        return output
+    if samples_count > len(output):
+        raise ValueError(
+            f"--samples={samples_count} is larger than the {len(output)} eligible users."
+        )
+    return output.sample(n=samples_count, random_state=seed).sort_values("user_id")
 
 
 def generate_normal_probabilities(
@@ -162,11 +181,9 @@ def generate_normal_probabilities(
     seed: int,
     samples_count: int | None,
 ) -> pd.DataFrame:
+    validate_samples_count(samples_count)
     counts = calculate_action_counts(df)
     counts = counts[counts.sum(axis=1) > 0]
-    if samples_count is not None and samples_count <= 0:
-        raise ValueError("--samples must be greater than 0.")
-
     samples_count = samples_count or len(counts)
     user_ids = list(range(1, samples_count + 1))
     proportions = counts.div(counts.sum(axis=1), axis=0)
@@ -198,7 +215,12 @@ def main() -> None:
     df = read_inputs(args)
 
     if args.mode == "action":
-        output = generate_empirical_probabilities(df, args.threshold)
+        output = generate_empirical_probabilities(
+            df,
+            args.threshold,
+            args.seed,
+            args.samples,
+        )
     else:
         output = generate_normal_probabilities(df, args.seed, args.samples)
 
