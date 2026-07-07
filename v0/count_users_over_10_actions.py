@@ -14,16 +14,30 @@ def add_tweet_type(df: pd.DataFrame) -> pd.DataFrame:
 
     tweet_type = pd.Series("tweet", index=df.index)
 
+    def has_value(series: pd.Series) -> pd.Series:
+        text = series.astype("string").str.strip().str.lower()
+        missing_text = text.isin(["", "nan", "none", "null", "na", "n/a", "<na>"])
+        return series.notna() & ~missing_text
+
+    def is_true(series: pd.Series) -> pd.Series:
+        if pd.api.types.is_bool_dtype(series):
+            return series.fillna(False)
+        text = series.astype("string").str.strip().str.lower()
+        return text.isin(["true", "1", "t", "yes", "y"])
+
     if "quoted_tweet_tweetid" in df.columns:
-        tweet_type = tweet_type.mask(df["quoted_tweet_tweetid"].notna(), "quote")
+        tweet_type = tweet_type.mask(has_value(df["quoted_tweet_tweetid"]), "quote")
     if "in_reply_to_tweetid" in df.columns:
-        tweet_type = tweet_type.mask(df["in_reply_to_tweetid"].notna(), "reply")
+        tweet_type = tweet_type.mask(has_value(df["in_reply_to_tweetid"]), "reply")
     elif "in_reply_to_userid" in df.columns:
-        tweet_type = tweet_type.mask(df["in_reply_to_userid"].notna(), "reply")
+        tweet_type = tweet_type.mask(has_value(df["in_reply_to_userid"]), "reply")
     if "is_retweet" in df.columns:
-        tweet_type = tweet_type.mask(df["is_retweet"].fillna(False), "retweet")
+        retweet_mask = is_true(df["is_retweet"])
+        if "retweet_tweetid" in df.columns:
+            retweet_mask = retweet_mask | has_value(df["retweet_tweetid"])
+        tweet_type = tweet_type.mask(retweet_mask, "retweet")
     elif "retweet_tweetid" in df.columns:
-        tweet_type = tweet_type.mask(df["retweet_tweetid"].notna(), "retweet")
+        tweet_type = tweet_type.mask(has_value(df["retweet_tweetid"]), "retweet")
 
     df = df.copy()
     df["tweet_type"] = tweet_type
@@ -53,6 +67,8 @@ def run_procedure(label: str, df: pd.DataFrame) -> None:
     print(f"\n{label}")
     print(df.info())
     df = add_tweet_type(df)
+    print("Tweet type distribution:")
+    print(df["tweet_type"].value_counts(dropna=False).to_string())
     user_column = get_user_column(df)
     counts = df.groupby([user_column, "tweet_type"]).size().unstack(fill_value=0)
 
