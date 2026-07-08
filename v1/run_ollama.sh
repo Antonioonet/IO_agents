@@ -3,7 +3,7 @@ export OLLAMA_MODELS_DIR="$OLLAMA_BASE/models"
 export OLLAMA_SIF="$OLLAMA_BASE/ollama_latest.sif"
 export OLLAMA_SERVER_LOG="$OLLAMA_BASE/ollama-server.log"
 export APPTAINER_CACHEDIR="/scratch1/$USER/apptainer-cache"
-export MODEL=" qwen3.6:35b-a3b-mtp-q4_K_M"
+export MODEL="qwen3.6:35b-a3b-mtp-q4_K_M"
 mkdir -p "$OLLAMA_BASE" "$OLLAMA_MODELS_DIR" "$APPTAINER_CACHEDIR" "$OLLAMA_SERVER_LOG"
 
 
