@@ -1,7 +1,7 @@
-export OLLAMA_BASE="/scratch/$USER/ollama" 
+export OLLAMA_BASE="/scratch1/$USER/ollama" 
 export OLLAMA_MODELS_DIR="$OLLAMA_BASE/models"
 export OLLAMA_SIF="$OLLAMA_BASE/ollama_latest.sif"
-export APPTAINER_CACHEDIR="$/scratch1/$USER/apptainer-cache"
+export APPTAINER_CACHEDIR="/scratch1/$USER/apptainer-cache"
 export MODEL="qwen-35b-a3b-mtp-q4_K_M"
 
 
