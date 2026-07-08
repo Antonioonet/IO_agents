@@ -28,7 +28,9 @@ APPTAINER_OLLAMA=(
 "${APPTAINER_OLLAMA[@]}" \
     ollama serve > "$OLLAMA_SERVER_LOG" 2>&1 & OLLAMA_PID=$!
 
-sleep 10 
+sleep 10
 
-"${APPTAINER_OLLAMA[@]}" ollama pull "$MODEL"
-
+curl http://localhost:11434/api/generate -d '{
+  "model": "gemma4",
+  "prompt": "Why is the sky blue?"
+}'
