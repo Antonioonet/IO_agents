@@ -29,8 +29,8 @@ APPTAINER_OLLAMA=(
     ollama serve > "$OLLAMA_SERVER_LOG" 2>&1 & OLLAMA_PID=$!
 
 sleep 10
+curl http://localhost:11434/api/generate -d "{
+  \"model\": \"$MODEL\",
+  \"prompt\": \"Why is the sky blue?\"
+}"
 
-curl http://localhost:11434/api/generate -d '{
-  "model": $MODEL",
-  "prompt": "Why is the sky blue?"
-}'
