@@ -3,8 +3,12 @@ export OLLAMA_MODELS_DIR="$OLLAMA_BASE/models"
 export OLLAMA_SIF="$OLLAMA_BASE/ollama_latest.sif"
 export APPTAINER_CACHEDIR="$/scratch1/$USER/apptainer-cache"
 export MODEL="qwen-35b-a3b-mtp-q4_K_M"
+
+
 mkdir -p "$OLLAMA_BASE" "$OLLAMA_MODELS_DIR" "$APPTAINER_CACHEDIR"
 
+
+module load apptainer
 if [ ! -f "$OLLAMA_SIF" ]; then
     apptainer pull "$OLLAMA_SIF" docker://ollama/ollama:latest
 fi
