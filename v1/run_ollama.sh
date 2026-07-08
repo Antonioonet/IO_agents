@@ -31,6 +31,6 @@ APPTAINER_OLLAMA=(
 sleep 10
 
 curl http://localhost:11434/api/generate -d '{
-  "model": "gemma4",
+  "model": $MODEL",
   "prompt": "Why is the sky blue?"
 }'
