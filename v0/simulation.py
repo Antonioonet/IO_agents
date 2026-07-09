@@ -88,12 +88,6 @@ def parse_args():
         "--action-mode",
         choices=("natural", "prompt_probabilities", "autonomous", "calibrated"),
         default="natural",
-        help=(
-            "Action control mode. natural gives agents the normal prompt; "
-            "prompt_probabilities adds probabilities to personas; autonomous "
-            "hard-samples act/skip and action type before each step; calibrated "
-            "uses Bayesian prior correction with one-hot natural LLM choices."
-        ),
     )
     parser.add_argument(
         "--action-probabilities-path",
