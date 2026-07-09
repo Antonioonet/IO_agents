@@ -41,6 +41,10 @@ def parse_args():
         "--llm-steps",
         default=1,
     )
+    parser.add_argument(
+        "--ollama_url",
+        default=127.0.0.1:11434,
+    )
     return parser.parse_args()
 
 async def main():
