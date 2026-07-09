@@ -142,7 +142,7 @@ async def main():
     available_actions = get_available_actions()
 
     agent_graph = await generate_twitter_agent_graph(
-        profile_path=f"data/{args.experiment_name}/users_dataset.csv",
+        profile_path=f"data/users_dataset.csv",
         model=model,
         available_actions=available_actions,
     )   
