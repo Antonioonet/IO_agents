@@ -33,7 +33,7 @@ def parse_args():
         choices=("natural", "prompt_probabilities", "autonomous", "calibrated"),
         default="natural",
     )
-     parser.add_argument(
+    parser.add_argument(
         "--model",
         default="qwen3.6:35b-a3b-mtp-q4_K_M",
     )
