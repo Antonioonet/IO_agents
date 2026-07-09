@@ -42,7 +42,7 @@ def parse_args():
         default=1,
     )
     parser.add_argument(
-        "--ollama_url",
+        "--ollama-url",
         default=127.0.0.1:11434,
     )
     return parser.parse_args()
