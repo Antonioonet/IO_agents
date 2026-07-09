@@ -1,6 +1,0 @@
-python generate_action_probabilities.py \
-  --mode normal \
-  --input data/Russia/merged_control.pkl \
-  --output user_prob/normal_action_probabilities.csv \
-  --samples 4 \
-  --seed 0

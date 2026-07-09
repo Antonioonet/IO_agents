@@ -1,14 +1,30 @@
-*.pyc
+# Python
 __pycache__/
-.DS_Store
-v0/database/
-v0/experiments/
-v0/log/
-v0/data/
-.vscode/
-*.out
-v1/log/*
-v1/.ipynb_checkpoints
-log/
-v0/ipynb_checkpoints
+*.py[cod]
+*$py.class
 
+# OS / editor
+.DS_Store
+.vscode/
+
+# Jupyter
+.ipynb_checkpoints/
+**/.ipynb_checkpoints/
+
+# Logs and job output
+log/
+**/log/
+*.log
+*.out
+*.err
+
+# OASIS generated outputs
+**/database/
+**/experiments/
+*.db
+*.sqlite
+*.sqlite3
+
+# Local/generated data
+v0/data/
+v1/data/*/database.db

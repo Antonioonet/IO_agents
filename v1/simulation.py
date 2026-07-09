@@ -39,11 +39,12 @@ def parse_args():
     )
     parser.add_argument(
         "--llm-steps",
+        type=int,
         default=1,
     )
     parser.add_argument(
         "--ollama-url",
-        default="127.0.0.1:11434",
+        default="http://127.0.0.1:11434",
     )
     return parser.parse_args()
 
@@ -60,7 +61,7 @@ async def main():
     available_actions = get_available_actions()
 
     agent_graph = await generate_twitter_agent_graph(
-        profile_path=f"data/users_dataset.csv",
+        profile_path=str(base_dir / "data" / "users_dataset.csv"),
         model=model,
         available_actions=available_actions,
     )   
@@ -68,7 +69,8 @@ async def main():
     ## fix the agente graph templat 
 
     # Define the path to the database
-    db_path = f"data/{args.experiment_name}/database.db"
+    db_path = str(base_dir / "data" / args.experiment_name / "database.db")
+    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     os.environ["OASIS_DB_PATH"] = os.path.abspath(db_path)
 
     if os.path.exists(db_path):
@@ -85,7 +87,7 @@ async def main():
 
     for step in range(args.llm_steps):
         print(f"Step {step + 1}/{args.llm_steps}")
-        actions = generate_actios(args)
+        actions = generate_actios(args, env)
         await env.step(actions)
 
     await env.close()
