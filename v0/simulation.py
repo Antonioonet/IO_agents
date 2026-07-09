@@ -7,11 +7,10 @@ from datetime import datetime
 from pathlib import Path
 
 import oasis
-from oasis.clock.clock import Clock
 
 from camel.models import ModelFactory
 from camel.types import ModelPlatformType
-from oasis import ActionType, LLMAction, ManualAction, generate_twitter_agent_graph
+from oasis import ActionType, LLMAction, generate_twitter_agent_graph
 
 from utils import (
     append_action_probability_prompts_to_personas,
@@ -27,7 +26,7 @@ from utils import (
 
 
 
-DEFAULT_EXPERIMENT_NAME = "exp_20260630_141203"
+DEFAULT_EXPERIMENT_NAME = "exp_base"
 REQUIRED_PERSONA_COLUMNS = {"name", "username", "user_char", "description"}
 ALLOWED_TWITTER_ACTIONS = {
     "no_action": ("DO_NOTHING",),
@@ -248,65 +247,67 @@ def build_available_actions():
         )
 
     return actions
-
-
-async def main():
-    base_dir = Path(__file__).resolve().parent
-    args = parse_args()
-
-    data_path, experiment_label = resolve_profile_path(args, base_dir)
-    temp_profiles = []
+def resolve_split_profile_paths(args, base_dir: Path) -> tuple[Path | None, Path | None]:
     if args.profile_path is not None:
-        io_profile_path = None
-        normal_profile_path = None
-    elif args.io_profile_path is not None or args.normal_profile_path is not None:
-        io_profile_path = args.io_profile_path
-        normal_profile_path = args.normal_profile_path
-    else:
-        experiment_dir = base_dir / "experiments" / args.experiment_name
-        io_profile_path = experiment_dir / "personas_io_drivers.csv"
-        normal_profile_path = experiment_dir / "personas_normal_users.csv"
+        return None, None
 
-    if io_profile_path is not None and normal_profile_path is not None:
-        combined_rows = combine_profile_rows([io_profile_path, normal_profile_path])
-        temp_profile = write_temp_profiles(combined_rows)
-        temp_profiles.append(temp_profile)
-        data_path = Path(temp_profile.name)
-        print(
-            f"Combined {len(combined_rows)} personas in memory from "
-            f"{io_profile_path} and {normal_profile_path}"
-        )
+    if args.io_profile_path is not None or args.normal_profile_path is not None:
+        return args.io_profile_path, args.normal_profile_path
 
+    experiment_dir = base_dir / "experiments" / args.experiment_name
+    return (
+        experiment_dir / "personas_io_drivers.csv",
+        experiment_dir / "personas_normal_users.csv",
+    )
+
+
+def validate_run_args(args, data_path: Path) -> None:
     if not data_path.exists():
         raise FileNotFoundError(f"Persona profile file not found: {data_path}")
+
     if args.llm_steps < 0:
         raise ValueError("--llm-steps must be 0 or greater.")
+
     if args.action_mode == "natural" and args.action_probabilities_path is not None:
         raise ValueError(
             "--action-probabilities-path is only valid with "
             "--action-mode prompt_probabilities, --action-mode autonomous, "
             "or --action-mode calibrated."
         )
+
     if args.action_mode != "natural" and args.action_probabilities_path is None:
         raise ValueError(
             f"--action-probabilities-path is required with --action-mode {args.action_mode}."
         )
+
     if args.action_mode != "calibrated":
         if args.implicit_priors_path is not None or args.estimate_priors:
             raise ValueError(
                 "--implicit-priors-path and --estimate-priors are only valid "
                 "with --action-mode calibrated."
             )
-    if args.action_mode == "calibrated":
-        if args.implicit_priors_path is None:
-            raise ValueError(
-                "--implicit-priors-path is required with --action-mode calibrated."
-            )
-        if args.estimate_priors and args.prior_feed_path is None:
-            raise ValueError(
-                "--prior-feed-path is required when using --estimate-priors."
-            )
+        return
 
+    if args.implicit_priors_path is None:
+        raise ValueError(
+            "--implicit-priors-path is required with --action-mode calibrated."
+        )
+
+    if args.estimate_priors and args.prior_feed_path is None:
+        raise ValueError(
+            "--prior-feed-path is required when using --estimate-priors."
+        )
+async def main():
+    base_dir = Path(__file__).resolve().parent
+    args = parse_args()
+
+    data_path, experiment_label = resolve_profile_path(args, base_dir)
+    temp_profiles = []
+  
+    io_profile_path, normal_profile_path = resolve_split_profile_paths(args, base_dir)
+    
+    validate_run_args(args, data_path)
+    
     action_probabilities = None
     if args.action_probabilities_path is not None:
         action_probabilities = load_action_probabilities(args.action_probabilities_path)
