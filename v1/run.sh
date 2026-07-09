@@ -17,6 +17,13 @@ export OLLAMA_BASE="/scratch1/$USER/ollama"
 export OLLAMA_MODELS_DIR="$OLLAMA_BASE/models"
 export OLLAMA_SIF="$OLLAMA_BASE/ollama_latest.sif"
 
+export NORMAL_FILE="${NORMAL_FILE:-v1/data/real_twitter_data/normal.pkl}"
+export IO_FILE="${IO_FILE:-v1/data/real_twitter_data/io.pkl}"
+export NORMAL_LIMIT="${NORMAL_LIMIT:-1}"
+export IO_LIMIT="${IO_LIMIT:-1}"
+export TWEETS_PER_USER="${TWEETS_PER_USER:-10}"
+export LLM_STEPS="${LLM_STEPS:-1}"
+
 mkdir -p "$OLLAMA_MODELS_DIR"
 
 apptainer pull "$OLLAMA_SIF" docker://ollama/ollama:latest
@@ -37,6 +44,12 @@ apptainer exec --nv \
   ollama pull "$MODEL"
 
 python v1/simulation.py \
+  --generate-personas \
+  --normal-file "$NORMAL_FILE" \
+  --io-file "$IO_FILE" \
+  --normal-limit "$NORMAL_LIMIT" \
+  --io-limit "$IO_LIMIT" \
+  --tweets-per-user "$TWEETS_PER_USER" \
   --model "$MODEL" \
   --ollama-url "$OLLAMA_BASE_URL" \
-  --llm-steps 1
+  --llm-steps "$LLM_STEPS"

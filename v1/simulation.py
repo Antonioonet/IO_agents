@@ -11,6 +11,7 @@ from camel.models import ModelFactory
 from camel.types import ModelPlatformType
 from oasis import ActionType, LLMAction, generate_twitter_agent_graph
 
+from persona_generation import generate_personas
 from utils import * 
 
 
@@ -46,6 +47,44 @@ def parse_args():
         "--ollama-url",
         default="http://127.0.0.1:11434",
     )
+    parser.add_argument(
+        "--profile-path",
+        default=None,
+        help="CSV profile path. Defaults to data/users_dataset.csv unless --generate-personas is used.",
+    )
+    parser.add_argument(
+        "--generate-personas",
+        action="store_true",
+        help="Generate personas from real_twitter_data pickles before running the simulation.",
+    )
+    parser.add_argument(
+        "--normal-file",
+        default=None,
+        help="Normal-user pickle file for persona generation.",
+    )
+    parser.add_argument(
+        "--io-file",
+        default=None,
+        help="IO-user pickle file for persona generation.",
+    )
+    parser.add_argument(
+        "--normal-limit",
+        type=int,
+        default=None,
+        help="Maximum normal personas to generate.",
+    )
+    parser.add_argument(
+        "--io-limit",
+        type=int,
+        default=None,
+        help="Maximum IO personas to generate.",
+    )
+    parser.add_argument(
+        "--tweets-per-user",
+        type=int,
+        default=20,
+        help="Number of sampled tweets used in each persona prompt.",
+    )
     return parser.parse_args()
 
 async def main():
@@ -59,9 +98,23 @@ async def main():
     )
 
     available_actions = get_available_actions()
+    profile_path = Path(args.profile_path) if args.profile_path else base_dir / "data" / "users_dataset.csv"
+
+    if args.generate_personas:
+        profile_path = base_dir / "data" / "generated_personas.csv"
+        generate_personas(
+            normal_file=args.normal_file,
+            io_file=args.io_file,
+            normal_limit=args.normal_limit,
+            io_limit=args.io_limit,
+            tweets_per_user=args.tweets_per_user,
+            model=args.model,
+            ollama_url=args.ollama_url,
+            output_path=profile_path,
+        )
 
     agent_graph = await generate_twitter_agent_graph(
-        profile_path=str(base_dir / "data" / "users_dataset.csv"),
+        profile_path=str(profile_path),
         model=model,
         available_actions=available_actions,
     )   

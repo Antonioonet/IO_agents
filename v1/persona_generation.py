@@ -97,8 +97,32 @@ def build_persona_prompt(user_row, tweets, username):
     )
 
 
+def filter_io_users(df, min_original_tweets=5, min_retweets=5, min_comments=5):
+    is_retweet = df["is_retweet"].fillna(False) | df["retweet_tweetid"].notna()
+    is_comment = df["in_reply_to_tweetid"].notna()
+    is_original_tweet = ~is_retweet & ~is_comment
+
+    counts = pd.DataFrame(
+        {
+            "tweets": is_original_tweet.groupby(df["userid"]).sum(),
+            "retweets": is_retweet.groupby(df["userid"]).sum(),
+            "comments": is_comment.groupby(df["userid"]).sum(),
+        }
+    )
+    selected_userids = counts[
+        (counts["tweets"] >= min_original_tweets)
+        & (counts["retweets"] >= min_retweets)
+        & (counts["comments"] >= min_comments)
+    ].index
+    return df[df["userid"].isin(selected_userids)]
+
+
 def generate_personas(
     data_dir=DATA_DIR,
+    io_file=None,
+    normal_file=None,
+    normal_limit=None,
+    io_limit=None,
     min_tweets=10,
     tweets_per_user=20,
     model="qwen3.6:35b-a3b-mtp-q4_K_M",
@@ -106,34 +130,54 @@ def generate_personas(
     output_path=OUTPUT_PATH,
 ):
     data_dir = Path(data_dir)
-    frames = [pd.read_pickle(path) for path in sorted(data_dir.glob("*.pkl"))]
-    df = pd.concat(frames, ignore_index=True)
+    normal_file = Path(normal_file) if normal_file else data_dir / "normal.pkl"
+    io_file = Path(io_file) if io_file else data_dir / "io.pkl"
 
-    tweet_counts = df.groupby("userid").size()
-    selected_userids = tweet_counts[tweet_counts > min_tweets].index
-    df = df[df["userid"].isin(selected_userids)]
+    df_normal = pd.read_pickle(normal_file)
+    df_io = pd.read_pickle(io_file)
 
     personas = []
-    for _, user_tweets in df.groupby("userid"):
-        clean_tweets = user_tweets["tweet_text"].dropna().astype(str).tolist()
-        sampled_tweets = random.sample(clean_tweets, min(tweets_per_user, len(clean_tweets)))
-        user_row = user_tweets.iloc[0]
+    ct = 0
 
-        username_prompt = build_username_prompt(user_row, sampled_tweets)
-        username = clean_username(call_ollama(username_prompt, model=model, ollama_url=ollama_url))
+    for df, is_io in [(df_normal, False), (df_io, True)]:
+        limit = io_limit if is_io else normal_limit
 
-        persona_prompt = build_persona_prompt(user_row, sampled_tweets, username)
-        description = call_ollama(persona_prompt, model=model, ollama_url=ollama_url)
+        if is_io:
+            df = filter_io_users(df)
+        else:
+            tweet_counts = df.groupby("userid").size()
+            selected_userids = tweet_counts[tweet_counts > min_tweets].index
+            df = df[df["userid"].isin(selected_userids)]
 
-        personas.append(
-            {
-                "name": username,
-                "username": username,
-                "user_char": description,
-                "description": description,
-            }
-        )
-        print(f"Generated persona {len(personas)}/{len(selected_userids)}: {username}")
+        group_count = 0
+        for _, user_tweets in df.groupby("userid"):
+            if limit is not None and group_count >= limit:
+                break
+
+            clean_tweets = user_tweets["tweet_text"].dropna().astype(str).tolist()
+            sampled_tweets = random.sample(clean_tweets, min(tweets_per_user, len(clean_tweets)))
+            user_row = user_tweets.iloc[0]
+
+            username_prompt = build_username_prompt(user_row, sampled_tweets)
+            username = clean_username(call_ollama(username_prompt, model=model, ollama_url=ollama_url))
+
+            persona_prompt = build_persona_prompt(user_row, sampled_tweets, username)
+            description = call_ollama(persona_prompt, model=model, ollama_url=ollama_url)
+
+            personas.append(
+                {
+                    "user_id": ct,
+                    "real_user_id": user_row.get("userid", ""),
+                    "name": username,
+                    "username": username,
+                    "user_char": description,
+                    "description": description,
+                    "I.O": is_io,
+                }
+            )
+            print(f"Generated persona {len(personas)}: {username}")
+            ct += 1
+            group_count += 1
 
     personas_df = pd.DataFrame(personas)
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
