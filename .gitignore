@@ -7,4 +7,5 @@ v0/log/
 v0/data/
 .vscode/
 *.out
-
+v1/log/*
+v1/.ipynb_checkpoints
