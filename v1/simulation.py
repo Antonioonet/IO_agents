@@ -37,6 +37,10 @@ def parse_args():
         "--model",
         default="qwen3.6:35b-a3b-mtp-q4_K_M",
     )
+    parser.add_argument(
+        "--llm-steps",
+        default=1,
+    )
     return parser.parse_args()
 
 async def main():
