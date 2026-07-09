@@ -9,3 +9,6 @@ v0/data/
 *.out
 v1/log/*
 v1/.ipynb_checkpoints
+log/
+v0/ipynb_checkpoints
+
