@@ -1,12 +1,13 @@
 
+
+from oasis import ActionType, LLMAction
+
 ALLOWED_TWITTER_ACTIONS = [
     ActionType.DO_NOTHING,
     ActionType.CREATE_POST,
     ActionType.CREATE_COMMENT,
     ActionType.REPOST
 ]
-
-from oasis import ActionType, LLMAction
 
 def get_available_actions() -> list: return ALLOWED_TWITTER_ACTIONS
 
