@@ -156,4 +156,3 @@ echo
 echo "Ollama server is running. Keep this terminal/session open."
 echo "Press Ctrl-C to stop it."
 wait "$OLLAMA_PID"
-source /scratch1/$USER/ollama-gpu-oasis/ollama_connection.env
