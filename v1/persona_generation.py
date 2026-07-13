@@ -7,6 +7,13 @@ from urllib.request import Request, urlopen
 import numpy as np
 import pandas as pd
 
+from llm_bias_probabilities import (
+    DEFAULT_PRIOR_FEED_SIZE,
+    DEFAULT_PRIOR_SAMPLES,
+    estimate_llm_bias_probabilities,
+    stable_user_seed,
+)
+
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data" / "real_twitter_data"
@@ -267,6 +274,24 @@ def parse_args(argv=None):
         help="Random seed used to sample normal-user action probabilities.",
     )
     parser.add_argument(
+        "--prior-samples",
+        type=int,
+        default=DEFAULT_PRIOR_SAMPLES,
+        help="Number of constrained feed decisions used for each user's LLM bias prior.",
+    )
+    parser.add_argument(
+        "--prior-feed-size",
+        type=int,
+        default=DEFAULT_PRIOR_FEED_SIZE,
+        help="Number of randomly sampled tweets in each LLM bias feed snapshot.",
+    )
+    parser.add_argument(
+        "--prior-seed",
+        type=int,
+        default=0,
+        help="Random seed used to construct reproducible per-user feed snapshots.",
+    )
+    parser.add_argument(
         "--model",
         default="qwen3.6:35b-a3b-mtp-q4_K_M",
         help="Ollama model used to generate usernames and personas.",
@@ -298,6 +323,10 @@ def parse_args(argv=None):
         parser.error("--min-tweets must be 0 or greater")
     if args.tweets_per_user <= 0:
         parser.error("--tweets-per-user must be greater than 0")
+    if args.prior_samples <= 0:
+        parser.error("--prior-samples must be greater than 0")
+    if args.prior_feed_size <= 0:
+        parser.error("--prior-feed-size must be greater than 0")
     if args.request_timeout <= 0:
         parser.error("--request-timeout must be greater than 0")
 
@@ -350,6 +379,9 @@ def generate_personas(
     min_tweets=10,
     tweets_per_user=20,
     action_seed=0,
+    prior_samples=DEFAULT_PRIOR_SAMPLES,
+    prior_feed_size=DEFAULT_PRIOR_FEED_SIZE,
+    prior_seed=0,
     model="qwen3.6:35b-a3b-mtp-q4_K_M",
     ollama_url="http://127.0.0.1:11434",
     request_timeout=1800,
@@ -361,6 +393,15 @@ def generate_personas(
 
     df_normal = pd.read_pickle(normal_file)
     df_io = pd.read_pickle(io_file)
+    training_tweets = pd.concat(
+        [
+            df_normal[["userid", "tweet_text"]],
+            df_io[["userid", "tweet_text"]],
+        ],
+        ignore_index=True,
+    )
+    training_tweets = training_tweets.dropna(subset=["tweet_text"])
+    training_tweets["tweet_text"] = training_tweets["tweet_text"].astype(str)
     df_normal = filter_normal_users(df_normal, min_actions=min_tweets)
     normal_action_counts = calculate_action_counts(df_normal)
     normal_action_alpha = estimate_dirichlet_alpha(normal_action_counts)
@@ -403,6 +444,25 @@ def generate_personas(
                 ollama_url=ollama_url,
                 request_timeout=request_timeout,
             )
+            feed_pool = training_tweets.loc[
+                training_tweets["userid"] != user_row.get("userid"), "tweet_text"
+            ].tolist()
+            if not feed_pool:
+                feed_pool = clean_tweets
+            llm_bias_probabilities = estimate_llm_bias_probabilities(
+                persona=description,
+                feed_pool=feed_pool,
+                prior_samples=prior_samples,
+                feed_size=prior_feed_size,
+                prior_seed=stable_user_seed(
+                    prior_seed,
+                    user_row.get("userid", ""),
+                    is_io,
+                ),
+                model=model,
+                ollama_url=ollama_url,
+                request_timeout=request_timeout,
+            )
             if is_io:
                 action_probabilities = counts_to_probabilities(
                     user_tweets["tweet_type"].value_counts()
@@ -423,6 +483,7 @@ def generate_personas(
                     "description": description,
                     "I.O": is_io,
                     **action_probabilities,
+                    **llm_bias_probabilities,
                 }
             )
             print(f"Generated persona {len(personas)}: {username}")
@@ -446,6 +507,9 @@ def main(argv=None):
         min_tweets=args.min_tweets,
         tweets_per_user=args.tweets_per_user,
         action_seed=args.action_seed,
+        prior_samples=args.prior_samples,
+        prior_feed_size=args.prior_feed_size,
+        prior_seed=args.prior_seed,
         model=args.model,
         ollama_url=args.ollama_url,
         request_timeout=args.request_timeout,

@@ -11,7 +11,7 @@ from camel.models import ModelFactory
 from camel.types import ModelPlatformType
 from oasis import ActionType, LLMAction, generate_twitter_agent_graph
 
-from actions import add_io_text_prompt
+from actions import set_text_prompt
 from persona_generation import generate_personas
 from utils import * 
 
@@ -126,7 +126,8 @@ async def main():
         model=model,
         available_actions=available_actions,
     )   
-    add_io_text_prompt(
+    set_text_prompt(
+        args=args,
         agent_graph=agent_graph,
         profile_path=profile_path,
         model=model,
@@ -150,7 +151,10 @@ async def main():
         database_path=db_path,
     )
     
+
     await env.reset()
+
+
 
     for step in range(args.llm_steps):
         print(f"Step {step + 1}/{args.llm_steps}")
@@ -161,7 +165,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main()) 
-
-
-# just run the simulation
-# then personalize the agent actions
