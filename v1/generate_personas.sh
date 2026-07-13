@@ -1,5 +1,17 @@
 #!/bin/bash
 
+#SBATCH --account=ll_774_951
+#SBATCH --partition=gpu
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=10
+#SBATCH --gpus-per-task=a40:1
+#SBATCH --mem=64G
+#SBATCH --time=01:00:00
+#SBATCH --job-name=persona-generation
+#SBATCH --output=ollama-gpu-oasis-%j.out
+#SBATCH --error=ollama-gpu-oasis-%j.err
+
 set -e
 
 # Load the HPC software environment.
@@ -21,6 +33,7 @@ IO_LIMIT="${IO_LIMIT:-10}"
 MIN_TWEETS="${MIN_TWEETS:-10}"
 TWEETS_PER_USER="${TWEETS_PER_USER:-20}"
 ACTION_SEED="${ACTION_SEED:-0}"
+REQUEST_TIMEOUT="${REQUEST_TIMEOUT:-1800}"
 OUTPUT_PATH="${OUTPUT_PATH:-$SCRIPT_DIR/data/generated_personas.csv}"
 
 # Ollama files are kept in scratch so they do not fill the home directory.
@@ -39,6 +52,7 @@ fi
 # Make the host model directory available inside the container.
 export APPTAINERENV_OLLAMA_HOST="0.0.0.0:11434"
 export APPTAINERENV_OLLAMA_MODELS="/models"
+export APPTAINERENV_OLLAMA_LOAD_TIMEOUT="30m"
 
 apptainer exec --nv \
     --bind "$OLLAMA_MODELS_DIR:/models" \
@@ -74,6 +88,7 @@ python "$SCRIPT_DIR/persona_generation.py" \
     --action-seed "$ACTION_SEED" \
     --model "$MODEL" \
     --ollama-url "$OLLAMA_URL" \
+    --request-timeout "$REQUEST_TIMEOUT" \
     --output-path "$OUTPUT_PATH"
 
 echo "Personas written to: $OUTPUT_PATH"

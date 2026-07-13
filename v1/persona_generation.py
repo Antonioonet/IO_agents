@@ -47,7 +47,12 @@ Sampled tweets:
 """.strip()
 
 
-def call_ollama(prompt, model="qwen3.6:35b-a3b-mtp-q4_K_M", ollama_url="http://127.0.0.1:11434"):
+def call_ollama(
+    prompt,
+    model="qwen3.6:35b-a3b-mtp-q4_K_M",
+    ollama_url="http://127.0.0.1:11434",
+    request_timeout=1800,
+):
     request = Request(
         ollama_url.rstrip("/") + "/api/generate",
         data=json.dumps(
@@ -61,7 +66,7 @@ def call_ollama(prompt, model="qwen3.6:35b-a3b-mtp-q4_K_M", ollama_url="http://1
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urlopen(request, timeout=180) as response:
+    with urlopen(request, timeout=request_timeout) as response:
         result = json.loads(response.read().decode("utf-8"))
     return result["response"].strip()
 
@@ -272,6 +277,12 @@ def parse_args(argv=None):
         help="Base URL of the Ollama server.",
     )
     parser.add_argument(
+        "--request-timeout",
+        type=int,
+        default=1800,
+        help="Maximum seconds to wait for each Ollama response.",
+    )
+    parser.add_argument(
         "--output-path",
         type=Path,
         default=OUTPUT_PATH,
@@ -287,6 +298,8 @@ def parse_args(argv=None):
         parser.error("--min-tweets must be 0 or greater")
     if args.tweets_per_user <= 0:
         parser.error("--tweets-per-user must be greater than 0")
+    if args.request_timeout <= 0:
+        parser.error("--request-timeout must be greater than 0")
 
     return args
 
@@ -339,6 +352,7 @@ def generate_personas(
     action_seed=0,
     model="qwen3.6:35b-a3b-mtp-q4_K_M",
     ollama_url="http://127.0.0.1:11434",
+    request_timeout=1800,
     output_path=OUTPUT_PATH,
 ):
     data_dir = Path(data_dir)
@@ -373,10 +387,22 @@ def generate_personas(
             user_row = user_tweets.iloc[0]
 
             username_prompt = build_username_prompt(user_row, sampled_tweets)
-            username = clean_username(call_ollama(username_prompt, model=model, ollama_url=ollama_url))
+            username = clean_username(
+                call_ollama(
+                    username_prompt,
+                    model=model,
+                    ollama_url=ollama_url,
+                    request_timeout=request_timeout,
+                )
+            )
 
             persona_prompt = build_persona_prompt(user_row, sampled_tweets, username)
-            description = call_ollama(persona_prompt, model=model, ollama_url=ollama_url)
+            description = call_ollama(
+                persona_prompt,
+                model=model,
+                ollama_url=ollama_url,
+                request_timeout=request_timeout,
+            )
             if is_io:
                 action_probabilities = counts_to_probabilities(
                     user_tweets["tweet_type"].value_counts()
@@ -422,6 +448,7 @@ def main(argv=None):
         action_seed=args.action_seed,
         model=args.model,
         ollama_url=args.ollama_url,
+        request_timeout=args.request_timeout,
         output_path=args.output_path,
     )
 
