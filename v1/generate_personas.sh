@@ -1,11 +1,11 @@
 #!/bin/bash
 
-#SBATCH --account=ll_774_951
+#SBATCH --account=emiliofe_74
 #SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=10
-#SBATCH --gpus-per-task=a40:1
+#SBATCH --gpus-per-task=v100:1
 #SBATCH --mem=64G
 #SBATCH --time=01:00:00
 #SBATCH --job-name=persona-generation
