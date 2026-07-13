@@ -3,12 +3,14 @@ import random
 from pathlib import Path
 from urllib.request import Request, urlopen
 
+import numpy as np
 import pandas as pd
 
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data" / "real_twitter_data"
 OUTPUT_PATH = BASE_DIR / "data" / "generated_personas.csv"
+ACTION_COLUMNS = ["post", "reply", "retweet"]
 
 
 PERSONA_PROMPT = """
@@ -78,6 +80,128 @@ def format_tweets(tweets):
     return "\n".join(f"- {tweet}" for tweet in tweets)
 
 
+def has_value(series):
+    text = series.astype("string").str.strip().str.lower()
+    missing_text = text.isin(["", "nan", "none", "null", "na", "n/a", "<na>"])
+    return series.notna() & ~missing_text
+
+
+def is_true(series):
+    if pd.api.types.is_bool_dtype(series):
+        return series.fillna(False)
+    text = series.astype("string").str.strip().str.lower()
+    return text.isin(["true", "1", "t", "yes", "y"])
+
+
+def exclude_quotes(df):
+    quote_columns = [
+        "is_quote",
+        "is_quote_status",
+        "quoted_status_id",
+        "quoted_tweetid",
+        "quoted_tweet_id",
+        "quote_tweetid",
+        "quote_tweet_id",
+    ]
+    quote_mask = pd.Series(False, index=df.index)
+    for column in quote_columns:
+        if column not in df.columns:
+            continue
+        if column.startswith("is_"):
+            quote_mask = quote_mask | is_true(df[column])
+        else:
+            quote_mask = quote_mask | has_value(df[column])
+    return df[~quote_mask].copy()
+
+
+def add_tweet_type(df):
+    if "tweet_type" in df.columns:
+        df = df.copy()
+        df["tweet_type"] = df["tweet_type"].replace({"tweet": "post"})
+        return df[df["tweet_type"].isin(ACTION_COLUMNS)].copy()
+
+    tweet_type = pd.Series("post", index=df.index)
+
+    if "in_reply_to_tweetid" in df.columns:
+        tweet_type = tweet_type.mask(has_value(df["in_reply_to_tweetid"]), "reply")
+    elif "in_reply_to_userid" in df.columns:
+        tweet_type = tweet_type.mask(has_value(df["in_reply_to_userid"]), "reply")
+
+    if "is_retweet" in df.columns:
+        retweet_mask = is_true(df["is_retweet"])
+        if "retweet_tweetid" in df.columns:
+            retweet_mask = retweet_mask | has_value(df["retweet_tweetid"])
+        tweet_type = tweet_type.mask(retweet_mask, "retweet")
+    elif "retweet_tweetid" in df.columns:
+        tweet_type = tweet_type.mask(has_value(df["retweet_tweetid"]), "retweet")
+
+    df = df.copy()
+    df["tweet_type"] = tweet_type
+    return df[df["tweet_type"].isin(ACTION_COLUMNS)].copy()
+
+
+def prepare_action_rows(df):
+    return add_tweet_type(exclude_quotes(df))
+
+
+def calculate_action_counts(df):
+    df = prepare_action_rows(df)
+    counts = df.groupby(["userid", "tweet_type"]).size().unstack(fill_value=0)
+    return counts.reindex(columns=ACTION_COLUMNS, fill_value=0)
+
+
+def counts_to_probabilities(counts):
+    total = float(sum(counts.get(action, 0) for action in ACTION_COLUMNS))
+    if total <= 0:
+        return {"p_action": 0.0, "post": 1 / 3, "reply": 1 / 3, "retweet": 1 / 3}
+    return {
+        "p_action": 0.0,
+        **{
+            action: float(counts.get(action, 0) / total)
+            for action in ACTION_COLUMNS
+        },
+    }
+
+
+def estimate_dirichlet_alpha(action_counts):
+    action_counts = action_counts[action_counts.sum(axis=1) > 0]
+    if action_counts.empty:
+        return np.ones(len(ACTION_COLUMNS), dtype=float)
+
+    proportions = action_counts.div(action_counts.sum(axis=1), axis=0)
+    means = proportions.mean().to_numpy(dtype=float)
+    means = np.clip(means, 1e-6, None)
+    means = means / means.sum()
+
+    variances = proportions.var(ddof=1).fillna(0.0).to_numpy(dtype=float)
+    concentration_estimates = []
+    for mean, variance in zip(means, variances):
+        if variance <= 0:
+            continue
+        estimate = mean * (1.0 - mean) / variance - 1.0
+        if np.isfinite(estimate) and estimate > 0:
+            concentration_estimates.append(estimate)
+
+    concentration = (
+        float(np.median(concentration_estimates))
+        if concentration_estimates
+        else 100.0
+    )
+    concentration = float(np.clip(concentration, 20.0, 1000.0))
+    return np.clip(means * concentration, 0.05, None)
+
+
+def sample_dirichlet_probabilities(rng, alpha):
+    sample = rng.dirichlet(alpha)
+    return {
+        "p_action": 0.0,
+        **{
+            action: float(sample[index])
+            for index, action in enumerate(ACTION_COLUMNS)
+        },
+    }
+
+
 def build_username_prompt(user_row, tweets):
     return USERNAME_PROMPT.format(
         display_name=user_row.get("user_display_name", ""),
@@ -98,22 +222,20 @@ def build_persona_prompt(user_row, tweets, username):
 
 
 def filter_io_users(df, min_original_tweets=5, min_retweets=5, min_comments=5):
-    is_retweet = df["is_retweet"].fillna(False) | df["retweet_tweetid"].notna()
-    is_comment = df["in_reply_to_tweetid"].notna()
-    is_original_tweet = ~is_retweet & ~is_comment
-
-    counts = pd.DataFrame(
-        {
-            "tweets": is_original_tweet.groupby(df["userid"]).sum(),
-            "retweets": is_retweet.groupby(df["userid"]).sum(),
-            "comments": is_comment.groupby(df["userid"]).sum(),
-        }
-    )
+    df = prepare_action_rows(df)
+    counts = calculate_action_counts(df)
     selected_userids = counts[
-        (counts["tweets"] >= min_original_tweets)
-        & (counts["retweets"] >= min_retweets)
-        & (counts["comments"] >= min_comments)
+        (counts["post"] >= min_original_tweets)
+        & (counts["retweet"] >= min_retweets)
+        & (counts["reply"] >= min_comments)
     ].index
+    return df[df["userid"].isin(selected_userids)]
+
+
+def filter_normal_users(df, min_actions=10):
+    df = prepare_action_rows(df)
+    counts = calculate_action_counts(df)
+    selected_userids = counts[counts.sum(axis=1) >= min_actions].index
     return df[df["userid"].isin(selected_userids)]
 
 
@@ -125,6 +247,7 @@ def generate_personas(
     io_limit=None,
     min_tweets=10,
     tweets_per_user=20,
+    action_seed=0,
     model="qwen3.6:35b-a3b-mtp-q4_K_M",
     ollama_url="http://127.0.0.1:11434",
     output_path=OUTPUT_PATH,
@@ -135,6 +258,10 @@ def generate_personas(
 
     df_normal = pd.read_pickle(normal_file)
     df_io = pd.read_pickle(io_file)
+    df_normal = filter_normal_users(df_normal, min_actions=min_tweets)
+    normal_action_counts = calculate_action_counts(df_normal)
+    normal_action_alpha = estimate_dirichlet_alpha(normal_action_counts)
+    action_rng = np.random.default_rng(action_seed)
 
     personas = []
     ct = 0
@@ -145,9 +272,7 @@ def generate_personas(
         if is_io:
             df = filter_io_users(df)
         else:
-            tweet_counts = df.groupby("userid").size()
-            selected_userids = tweet_counts[tweet_counts > min_tweets].index
-            df = df[df["userid"].isin(selected_userids)]
+            df = filter_normal_users(df, min_actions=min_tweets)
 
         group_count = 0
         for _, user_tweets in df.groupby("userid"):
@@ -163,6 +288,15 @@ def generate_personas(
 
             persona_prompt = build_persona_prompt(user_row, sampled_tweets, username)
             description = call_ollama(persona_prompt, model=model, ollama_url=ollama_url)
+            if is_io:
+                action_probabilities = counts_to_probabilities(
+                    user_tweets["tweet_type"].value_counts()
+                )
+            else:
+                action_probabilities = sample_dirichlet_probabilities(
+                    action_rng,
+                    normal_action_alpha,
+                )
 
             personas.append(
                 {
@@ -173,6 +307,7 @@ def generate_personas(
                     "user_char": description,
                     "description": description,
                     "I.O": is_io,
+                    **action_probabilities,
                 }
             )
             print(f"Generated persona {len(personas)}: {username}")

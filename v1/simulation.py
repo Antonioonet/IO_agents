@@ -11,6 +11,7 @@ from camel.models import ModelFactory
 from camel.types import ModelPlatformType
 from oasis import ActionType, LLMAction, generate_twitter_agent_graph
 
+from actions import add_io_text_prompt
 from persona_generation import generate_personas
 from utils import * 
 
@@ -85,6 +86,12 @@ def parse_args():
         default=20,
         help="Number of sampled tweets used in each persona prompt.",
     )
+    parser.add_argument(
+        "--action-seed",
+        type=int,
+        default=0,
+        help="Random seed for sampled normal-user action probabilities.",
+    )
     return parser.parse_args()
 
 async def main():
@@ -108,6 +115,7 @@ async def main():
             normal_limit=args.normal_limit,
             io_limit=args.io_limit,
             tweets_per_user=args.tweets_per_user,
+            action_seed=args.action_seed,
             model=args.model,
             ollama_url=args.ollama_url,
             output_path=profile_path,
@@ -118,6 +126,12 @@ async def main():
         model=model,
         available_actions=available_actions,
     )   
+    add_io_text_prompt(
+        agent_graph=agent_graph,
+        profile_path=profile_path,
+        model=model,
+        available_actions=available_actions,
+    )
 
     ## fix the agente graph templat 
 
