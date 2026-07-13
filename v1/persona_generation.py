@@ -1,3 +1,4 @@
+import argparse
 import json
 import random
 from pathlib import Path
@@ -202,6 +203,94 @@ def sample_dirichlet_probabilities(rng, alpha):
     }
 
 
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        description=(
+            "Generate OASIS personas and action probabilities from normal "
+            "and IO Twitter pickle datasets."
+        )
+    )
+    parser.add_argument(
+        "--data-dir",
+        type=Path,
+        default=DATA_DIR,
+        help=(
+            "Directory containing normal.pkl and io.pkl. Explicit "
+            "--normal-file/--io-file values override these defaults."
+        ),
+    )
+    parser.add_argument(
+        "--normal-file",
+        type=Path,
+        default=None,
+        help="Path to the normal-user pickle dataset.",
+    )
+    parser.add_argument(
+        "--io-file",
+        type=Path,
+        default=None,
+        help="Path to the IO-user pickle dataset.",
+    )
+    parser.add_argument(
+        "--normal-limit",
+        type=int,
+        default=None,
+        help="Maximum number of normal-user personas to generate.",
+    )
+    parser.add_argument(
+        "--io-limit",
+        type=int,
+        default=None,
+        help="Maximum number of IO-user personas to generate.",
+    )
+    parser.add_argument(
+        "--min-tweets",
+        type=int,
+        default=10,
+        help="Minimum number of usable actions required for a normal user.",
+    )
+    parser.add_argument(
+        "--tweets-per-user",
+        type=int,
+        default=20,
+        help="Maximum number of tweets sampled for each LLM prompt.",
+    )
+    parser.add_argument(
+        "--action-seed",
+        type=int,
+        default=0,
+        help="Random seed used to sample normal-user action probabilities.",
+    )
+    parser.add_argument(
+        "--model",
+        default="qwen3.6:35b-a3b-mtp-q4_K_M",
+        help="Ollama model used to generate usernames and personas.",
+    )
+    parser.add_argument(
+        "--ollama-url",
+        default="http://127.0.0.1:11434",
+        help="Base URL of the Ollama server.",
+    )
+    parser.add_argument(
+        "--output-path",
+        type=Path,
+        default=OUTPUT_PATH,
+        help="Destination CSV path.",
+    )
+    args = parser.parse_args(argv)
+
+    for option in ("normal_limit", "io_limit"):
+        value = getattr(args, option)
+        if value is not None and value < 0:
+            parser.error(f"--{option.replace('_', '-')} must be 0 or greater")
+    if args.min_tweets < 0:
+        parser.error("--min-tweets must be 0 or greater")
+    if args.tweets_per_user <= 0:
+        parser.error("--tweets-per-user must be greater than 0")
+
+    return args
+
+
 def build_username_prompt(user_row, tweets):
     return USERNAME_PROMPT.format(
         display_name=user_row.get("user_display_name", ""),
@@ -320,5 +409,22 @@ def generate_personas(
     return personas_df
 
 
+def main(argv=None):
+    args = parse_args(argv)
+    return generate_personas(
+        data_dir=args.data_dir,
+        normal_file=args.normal_file,
+        io_file=args.io_file,
+        normal_limit=args.normal_limit,
+        io_limit=args.io_limit,
+        min_tweets=args.min_tweets,
+        tweets_per_user=args.tweets_per_user,
+        action_seed=args.action_seed,
+        model=args.model,
+        ollama_url=args.ollama_url,
+        output_path=args.output_path,
+    )
+
+
 if __name__ == "__main__":
-    generate_personas()
+    main()
