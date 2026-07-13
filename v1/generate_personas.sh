@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH --account=emiliofe_74
+#SBATCH --account=ll_774_951
 #SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -27,16 +27,13 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # Change these values here, or override them before running the script.
 MODEL="${MODEL:-qwen3.6:35b-a3b-mtp-q4_K_M}"
 NORMAL_FILE="${NORMAL_FILE:-$SCRIPT_DIR/data/russia/russia_201901_1_tweets_control.pkl}"
-IO_FILE="${IO_FILE:-$SCRIPT_DIR/data/russia/russia_201901_1_tweets_io.pkl}"
-NORMAL_LIMIT="${NORMAL_LIMIT:-50}"
+IO_FILE="${IO_FILE:-$SCRIPT_DIR/data/russia/russia_201901_1_tweets_control.pkl}"
+NORMAL_LIMIT="${NORMAL_LIMIT:-10}"
 IO_LIMIT="${IO_LIMIT:-10}"
 MIN_TWEETS="${MIN_TWEETS:-10}"
 TWEETS_PER_USER="${TWEETS_PER_USER:-20}"
 ACTION_SEED="${ACTION_SEED:-0}"
-PRIOR_SAMPLES="${PRIOR_SAMPLES:-10}"
-PRIOR_FEED_SIZE="${PRIOR_FEED_SIZE:-10}"
-PRIOR_SEED="${PRIOR_SEED:-0}"
-REQUEST_TIMEOUT="${REQUEST_TIMEOUT:-300}"
+REQUEST_TIMEOUT="${REQUEST_TIMEOUT:-1800}"
 OUTPUT_PATH="${OUTPUT_PATH:-$SCRIPT_DIR/data/generated_personas.csv}"
 
 # Ollama files are kept in scratch so they do not fill the home directory.
@@ -89,9 +86,6 @@ python "$SCRIPT_DIR/persona_generation.py" \
     --min-tweets "$MIN_TWEETS" \
     --tweets-per-user "$TWEETS_PER_USER" \
     --action-seed "$ACTION_SEED" \
-    --prior-samples "$PRIOR_SAMPLES" \
-    --prior-feed-size "$PRIOR_FEED_SIZE" \
-    --prior-seed "$PRIOR_SEED" \
     --model "$MODEL" \
     --ollama-url "$OLLAMA_URL" \
     --request-timeout "$REQUEST_TIMEOUT" \
