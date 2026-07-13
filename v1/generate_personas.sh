@@ -50,7 +50,9 @@ OLLAMA_PID=$!
 trap 'kill "$OLLAMA_PID" 2>/dev/null || true' EXIT
 
 echo "Waiting for Ollama to start..."
-until curl --silent --fail "$OLLAMA_URL/api/tags" >/dev/null; do
+until python -c \
+    "from urllib.request import urlopen; urlopen('$OLLAMA_URL/api/tags', timeout=2)" \
+    >/dev/null 2>&1; do
     sleep 2
 done
 
