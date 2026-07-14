@@ -123,7 +123,7 @@ async def main():
 
     
     available_actions = get_available_actions()
-    profile_path = Path(args.profile_path) if args.profile_path else base_dir / "data" / "users_dataset.csv"
+    profile_path = Path(args.profile_path) if args.profile_path else base_dir / "data" / "generated_personas.csv"
 
     if args.generate_personas:
         profile_path = base_dir / "data" / "generated_personas.csv"
@@ -146,22 +146,32 @@ async def main():
         available_actions=available_actions,
     )   
 
-    df = pd.read_csv(profile_path)
 
+
+
+    df = pd.read_csv(profile_path)
+    print(df.columns)
     io_agent_ids = set()
 
+
+    
+    
     for agent_id, agent in agent_graph.get_agents():
-        username = agent.user_info.user_name
+        username = agent.user_info.name
+        row = df[df["username"] == username]
 
-        user_row = df[df["username"] == username]
-
-        if user_row.empty:
+        if row.empty:
             raise ValueError(f"Agent username not found in CSV: {username}")
 
-        if bool(user_row.iloc[0]["I.O"]):
+        
+        if bool(row.iloc[0]["I.O"]):
             io_agent_ids.add(agent_id)
-    
 
+        agent.user_info.do_nothing_prob = 1. - float(row["p_action"])
+        agent.user_info.post_prob = float(row["post"])
+        agent.user_info.reply_prob = float(row["reply"])
+        agent.user_info.retweet_prob = float(row["retweet"])
+     
    
     await set_text_prompt(
         args=args,
@@ -170,7 +180,7 @@ async def main():
         model=model,
         available_actions=available_actions,
     )
-
+     
     ## fix the agente graph templat 
 
     # Define the path to the database
@@ -203,6 +213,8 @@ async def main():
             model=model,
             available_actions=available_actions,
         )
+    
+ 
     for agent_id, agent in env.agent_graph.get_agents():
         template = (
             IO_USER_INFO_TEMPLATE
@@ -237,6 +249,7 @@ async def main():
         seed_actions[agent] = posts
 
     await env.step(seed_actions)
+    
 
 
     for step in range(args.llm_steps):
@@ -247,6 +260,7 @@ async def main():
             for _, agent in env.agent_graph.get_agents()
         }
 
+        
         await env.step(actions)
 
     await env.close()

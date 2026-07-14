@@ -55,17 +55,17 @@ async def probabilities_prompt(user_name,df):
     user_info = user_row.iloc[0]
 
     prompt = f"""
-    # RESPONSE METHOD
-    Choose some actions from the following functions.
-    Please perform actions by tool calling.
-    Before act consider you have this action probabilities based on your profile and past behavior:
+        # RESPONSE METHOD
+        Choose some actions from the following functions.
+        Please perform actions by tool calling.
+        Before acting, consider these action probabilities based on your profile and past behavior:
 
-    # PROBABILITIES
-    - probability of doing nothing: {user_info['do_nothing_prob']}
-    - Probability of creating a post: {user_info['create_post_prob']}
-    - Probability of creating a comment: {user_info['create_comment_prob']}
-    - Probability of reposting: {user_info['repost_prob']}
-    """ 
+        # PROBABILITIES
+        - Probability of doing nothing: {1.0 - user_info['p_action']:.3f}
+        - Probability of creating a post: {user_info['p_action']*user_info['post']:.3f}
+        - Probability of creating a comment: {user_info['p_action']*user_info['reply']:.3f}
+        - Probability of reposting: {user_info['p_action']*user_info['retweet']:.3f}
+        """
     return prompt
     
 
@@ -195,7 +195,7 @@ async def set_text_prompt(
         elif args.action_mode == "prompt_probabilities":
             method = await probabilities_prompt(agent.user_info.name, profiles)
         elif args.action_mode == "autonomous":
-            method = await natureal_prompt()
+            method = await natural_prompt()
       
         agent_graph.agent_mappings[agent_id] = SocialAgent(
             agent_id=agent.social_agent_id,
