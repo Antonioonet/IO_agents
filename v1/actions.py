@@ -137,7 +137,11 @@ def prune_actions(agent_graph):
         agent.remove_tools(tool_names)
 
         # Register only the selected tool.
-        agent.add_tool(action_tools[selected_tool_name])
+        #agent.add_tool(action_tools[selected_tool_name])
+
+        # test 
+        agent.add_tool(action_tools["create_comment"])
+
 
 async def set_text_prompt(
     args,
