@@ -23,6 +23,7 @@ export NORMAL_LIMIT="${NORMAL_LIMIT:-1}"
 export IO_LIMIT="${IO_LIMIT:-1}"
 export TWEETS_PER_USER="${TWEETS_PER_USER:-10}"
 export LLM_STEPS="${LLM_STEPS:-1}"
+export DO_NOTHING_PROB="${DO_NOTHING_PROB:-0.25}"
 
 mkdir -p "$OLLAMA_MODELS_DIR"
 
@@ -50,6 +51,7 @@ python v1/simulation.py \
   --normal-limit "$NORMAL_LIMIT" \
   --io-limit "$IO_LIMIT" \
   --tweets-per-user "$TWEETS_PER_USER" \
+  --do-nothing-prob "$DO_NOTHING_PROB" \
   --model "$MODEL" \
   --ollama-url "$OLLAMA_BASE_URL" \
   --llm-steps "$LLM_STEPS"

@@ -66,19 +66,37 @@ class GeneratePersonasTests(unittest.TestCase):
 
             written = pd.read_csv(output_path)
 
-        expected_columns = {
+        expected_bias_columns = {
             "llm_bias_do_nothing_prob",
             "llm_bias_post_prob",
             "llm_bias_reply_prob",
             "llm_bias_retweet_prob",
         }
-        self.assertTrue(expected_columns.issubset(generated.columns))
-        self.assertTrue(expected_columns.issubset(written.columns))
+        expected_grounded_columns = {
+            "do_nothing_prob",
+            "create_post_prob",
+            "create_comment_prob",
+            "repost_prob",
+        }
+        self.assertTrue(expected_bias_columns.issubset(generated.columns))
+        self.assertTrue(expected_bias_columns.issubset(written.columns))
+        self.assertTrue(expected_grounded_columns.issubset(generated.columns))
+        self.assertTrue(expected_grounded_columns.issubset(written.columns))
         self.assertAlmostEqual(
-            generated.loc[0, list(expected_columns)].sum(),
+            generated.loc[0, list(expected_bias_columns)].sum(),
             1.0,
         )
+        self.assertAlmostEqual(
+            generated.loc[0, list(expected_grounded_columns)].sum(),
+            1.0,
+        )
+        self.assertEqual(generated.loc[0, "do_nothing_prob"], 0.25)
         self.assertEqual(generated.loc[0, "llm_bias_post_prob"], 11 / 14)
+        self.assertFalse(
+            {"p_action", "post", "reply", "retweet"}.intersection(
+                generated.columns
+            )
+        )
 
 
 if __name__ == "__main__":

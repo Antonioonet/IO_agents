@@ -33,6 +33,7 @@ IO_LIMIT="${IO_LIMIT:-10}"
 MIN_TWEETS="${MIN_TWEETS:-10}"
 TWEETS_PER_USER="${TWEETS_PER_USER:-20}"
 ACTION_SEED="${ACTION_SEED:-0}"
+DO_NOTHING_PROB="${DO_NOTHING_PROB:-0.25}"
 REQUEST_TIMEOUT="${REQUEST_TIMEOUT:-1800}"
 OUTPUT_PATH="${OUTPUT_PATH:-$SCRIPT_DIR/data/generated_personas.csv}"
 
@@ -86,6 +87,7 @@ python "$SCRIPT_DIR/persona_generation.py" \
     --min-tweets "$MIN_TWEETS" \
     --tweets-per-user "$TWEETS_PER_USER" \
     --action-seed "$ACTION_SEED" \
+    --do-nothing-prob "$DO_NOTHING_PROB" \
     --model "$MODEL" \
     --ollama-url "$OLLAMA_URL" \
     --request-timeout "$REQUEST_TIMEOUT" \

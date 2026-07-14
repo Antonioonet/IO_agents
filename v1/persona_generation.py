@@ -13,12 +13,14 @@ from llm_bias_probabilities import (
     estimate_llm_bias_probabilities,
     stable_user_seed,
 )
+from ollama_urls import ollama_native_url
 
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data" / "real_twitter_data"
 OUTPUT_PATH = BASE_DIR / "data" / "generated_personas.csv"
 ACTION_COLUMNS = ["post", "reply", "retweet"]
+DEFAULT_DO_NOTHING_PROBABILITY = 0.25
 
 
 PERSONA_PROMPT = """
@@ -61,7 +63,7 @@ def call_ollama(
     request_timeout=1800,
 ):
     request = Request(
-        ollama_url.rstrip("/") + "/api/generate",
+        ollama_native_url(ollama_url) + "/api/generate",
         data=json.dumps(
             {
                 "model": model,
@@ -163,16 +165,25 @@ def calculate_action_counts(df):
     return counts.reindex(columns=ACTION_COLUMNS, fill_value=0)
 
 
-def counts_to_probabilities(counts):
+def counts_to_probabilities(
+    counts,
+    do_nothing_prob=DEFAULT_DO_NOTHING_PROBABILITY,
+):
     total = float(sum(counts.get(action, 0) for action in ACTION_COLUMNS))
     if total <= 0:
-        return {"p_action": 0.0, "post": 1 / 3, "reply": 1 / 3, "retweet": 1 / 3}
-    return {
-        "p_action": 0.0,
-        **{
+        conditional = {action: 1 / 3 for action in ACTION_COLUMNS}
+    else:
+        conditional = {
             action: float(counts.get(action, 0) / total)
             for action in ACTION_COLUMNS
-        },
+        }
+
+    action_probability = 1.0 - do_nothing_prob
+    return {
+        "do_nothing_prob": do_nothing_prob,
+        "create_post_prob": action_probability * conditional["post"],
+        "create_comment_prob": action_probability * conditional["reply"],
+        "repost_prob": action_probability * conditional["retweet"],
     }
 
 
@@ -204,14 +215,18 @@ def estimate_dirichlet_alpha(action_counts):
     return np.clip(means * concentration, 0.05, None)
 
 
-def sample_dirichlet_probabilities(rng, alpha):
+def sample_dirichlet_probabilities(
+    rng,
+    alpha,
+    do_nothing_prob=DEFAULT_DO_NOTHING_PROBABILITY,
+):
     sample = rng.dirichlet(alpha)
+    action_probability = 1.0 - do_nothing_prob
     return {
-        "p_action": 0.0,
-        **{
-            action: float(sample[index])
-            for index, action in enumerate(ACTION_COLUMNS)
-        },
+        "do_nothing_prob": do_nothing_prob,
+        "create_post_prob": action_probability * float(sample[0]),
+        "create_comment_prob": action_probability * float(sample[1]),
+        "repost_prob": action_probability * float(sample[2]),
     }
 
 
@@ -274,6 +289,15 @@ def parse_args(argv=None):
         help="Random seed used to sample normal-user action probabilities.",
     )
     parser.add_argument(
+        "--do-nothing-prob",
+        type=float,
+        default=DEFAULT_DO_NOTHING_PROBABILITY,
+        help=(
+            "Grounded probability of taking no action. The remaining mass is "
+            "distributed across post, comment, and repost."
+        ),
+    )
+    parser.add_argument(
         "--prior-samples",
         type=int,
         default=DEFAULT_PRIOR_SAMPLES,
@@ -327,6 +351,8 @@ def parse_args(argv=None):
         parser.error("--prior-samples must be greater than 0")
     if args.prior_feed_size <= 0:
         parser.error("--prior-feed-size must be greater than 0")
+    if not 0 < args.do_nothing_prob < 1:
+        parser.error("--do-nothing-prob must be greater than 0 and less than 1")
     if args.request_timeout <= 0:
         parser.error("--request-timeout must be greater than 0")
 
@@ -379,6 +405,7 @@ def generate_personas(
     min_tweets=10,
     tweets_per_user=20,
     action_seed=0,
+    do_nothing_prob=DEFAULT_DO_NOTHING_PROBABILITY,
     prior_samples=DEFAULT_PRIOR_SAMPLES,
     prior_feed_size=DEFAULT_PRIOR_FEED_SIZE,
     prior_seed=0,
@@ -387,6 +414,9 @@ def generate_personas(
     request_timeout=1800,
     output_path=OUTPUT_PATH,
 ):
+    if not 0 < do_nothing_prob < 1:
+        raise ValueError("do_nothing_prob must be greater than 0 and less than 1")
+
     data_dir = Path(data_dir)
     normal_file = Path(normal_file) if normal_file else data_dir / "normal.pkl"
     io_file = Path(io_file) if io_file else data_dir / "io.pkl"
@@ -408,6 +438,7 @@ def generate_personas(
     action_rng = np.random.default_rng(action_seed)
 
     personas = []
+    usernames = set()
     ct = 0
 
     for df, is_io in [(df_normal, False), (df_io, True)]:
@@ -437,6 +468,12 @@ def generate_personas(
                 )
             )
 
+            if username in usernames:
+                suffix = 1
+                while f"{username}_{suffix}" in usernames:
+                    suffix += 1
+                username = f"{username}_{suffix}"
+            usernames.add(username)
             persona_prompt = build_persona_prompt(user_row, sampled_tweets, username)
             description = call_ollama(
                 persona_prompt,
@@ -465,12 +502,14 @@ def generate_personas(
             )
             if is_io:
                 action_probabilities = counts_to_probabilities(
-                    user_tweets["tweet_type"].value_counts()
+                    user_tweets["tweet_type"].value_counts(),
+                    do_nothing_prob=do_nothing_prob,
                 )
             else:
                 action_probabilities = sample_dirichlet_probabilities(
                     action_rng,
                     normal_action_alpha,
+                    do_nothing_prob=do_nothing_prob,
                 )
 
             personas.append(
@@ -507,6 +546,7 @@ def main(argv=None):
         min_tweets=args.min_tweets,
         tweets_per_user=args.tweets_per_user,
         action_seed=args.action_seed,
+        do_nothing_prob=args.do_nothing_prob,
         prior_samples=args.prior_samples,
         prior_feed_size=args.prior_feed_size,
         prior_seed=args.prior_seed,
@@ -515,7 +555,5 @@ def main(argv=None):
         request_timeout=args.request_timeout,
         output_path=args.output_path,
     )
-
-
 if __name__ == "__main__":
     main()

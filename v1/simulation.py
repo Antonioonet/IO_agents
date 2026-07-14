@@ -11,8 +11,13 @@ from camel.models import ModelFactory
 from camel.types import ModelPlatformType
 from oasis import ActionType, LLMAction, generate_twitter_agent_graph
 
-from actions import set_text_prompt
-from persona_generation import generate_personas
+from actions import *
+from ollama_urls import ollama_openai_url
+from persona_generation import (
+    DEFAULT_DO_NOTHING_PROBABILITY,
+    generate_personas,
+    call_ollama,
+)
 from utils import * 
 
 
@@ -92,7 +97,18 @@ def parse_args():
         default=0,
         help="Random seed for sampled normal-user action probabilities.",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--do-nothing-prob",
+        type=float,
+        default=DEFAULT_DO_NOTHING_PROBABILITY,
+        help=(
+            "Grounded probability of taking no action for generated personas."
+        ),
+    )
+    args = parser.parse_args()
+    if not 0 < args.do_nothing_prob < 1:
+        parser.error("--do-nothing-prob must be greater than 0 and less than 1")
+    return args
 
 async def main():
     base_dir = Path(__file__).resolve().parent
@@ -101,9 +117,11 @@ async def main():
     model = ModelFactory.create(
         model_platform=ModelPlatformType.OLLAMA,
         model_type=args.model,
-        url=args.ollama_url,
+        url=ollama_openai_url(args.ollama_url),
     )
 
+
+    
     available_actions = get_available_actions()
     profile_path = Path(args.profile_path) if args.profile_path else base_dir / "data" / "users_dataset.csv"
 
@@ -116,6 +134,7 @@ async def main():
             io_limit=args.io_limit,
             tweets_per_user=args.tweets_per_user,
             action_seed=args.action_seed,
+            do_nothing_prob=args.do_nothing_prob,
             model=args.model,
             ollama_url=args.ollama_url,
             output_path=profile_path,
@@ -126,7 +145,68 @@ async def main():
         model=model,
         available_actions=available_actions,
     )   
-    set_text_prompt(
+
+    df = pd.read_csv(profile_path)
+
+    io_agent_ids = set()
+
+    for agent_id, agent in agent_graph.get_agents():
+        username = agent.user_info.user_name
+
+        user_row = df[df["username"] == username]
+
+        if user_row.empty:
+            raise ValueError(f"Agent username not found in CSV: {username}")
+
+        if bool(user_row.iloc[0]["I.O"]):
+            io_agent_ids.add(agent_id)
+    
+
+    seed_actions = {}
+    await set_text_prompt(
+            args=args,
+            agent_graph=env.agent_graph,
+            profile_path=profile_path,
+            model=model,
+            available_actions=available_actions,
+        )
+    for agent_id, agent in env.agent_graph.get_agents():
+        template = (
+            IO_USER_INFO_TEMPLATE
+            if agent_id in io_agent_ids
+            else NORMAL_USER_INFO_TEMPLATE
+        )
+
+        description = agent.user_info.description or ""
+        prompt = (
+            template.format(description=description)
+            + "\n\n"
+            + SEED_PROMPT
+        )
+
+        posts = []
+
+        for _ in range(5):
+            tweet = await asyncio.to_thread(
+                call_ollama,
+                prompt,
+                model=args.model,
+                ollama_url=args.ollama_url,
+            )
+
+            posts.append(
+                oasis.ManualAction(
+                    action_type=ActionType.CREATE_POST,
+                    action_args={"content": tweet},
+                )
+            )
+
+        seed_actions[agent] = posts
+
+    await env.step(seed_actions)
+
+
+    await set_text_prompt(
         args=args,
         agent_graph=agent_graph,
         profile_path=profile_path,
@@ -144,24 +224,31 @@ async def main():
     if os.path.exists(db_path):
         os.remove(db_path)
 
-    # Make the environment
+    platform = oasis.Platform(
+        db_path=db_path,
+        recsys_type="twhin-bert",
+        max_rec_post_len=5,
+        refresh_rec_post_count=10,
+        following_post_count=2,
+    )
     env = oasis.make(
         agent_graph=agent_graph,
-        platform=oasis.DefaultPlatformType.TWITTER,
+        platform=platform,
         database_path=db_path,
     )
-    
-
     await env.reset()
-
-
 
     for step in range(args.llm_steps):
         print(f"Step {step + 1}/{args.llm_steps}")
-        actions = generate_actios(args, env)
+ 
+        actions = {
+            agent: LLMAction()
+            for _, agent in env.agent_graph.get_agents()
+        }
+
         await env.step(actions)
 
     await env.close()
 
 if __name__ == "__main__":
-    asyncio.run(main()) 
+    asyncio.run(main())

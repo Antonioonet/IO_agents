@@ -1,8 +1,11 @@
+import asyncio
 import hashlib
 import json
 import random
 from collections import Counter
 from urllib.request import Request, urlopen
+
+from ollama_urls import ollama_native_url
 
 
 LLM_BIAS_ACTIONS = ["do_nothing", "post", "reply", "retweet"]
@@ -83,7 +86,7 @@ def call_constrained_action(
         options["seed"] = seed
 
     request = Request(
-        ollama_url.rstrip("/") + "/api/generate",
+        ollama_native_url(ollama_url) + "/api/generate",
         data=json.dumps(
             {
                 "model": model,
@@ -100,6 +103,58 @@ def call_constrained_action(
     with urlopen(request, timeout=request_timeout) as response:
         result = json.loads(response.read().decode("utf-8"))
     return parse_constrained_action(result["response"].strip())
+
+
+def feed_posts_to_text(feed_posts):
+    """Convert OASIS feed posts into non-empty text strings for the prompt."""
+    tweets = []
+
+    for post in feed_posts:
+        if isinstance(post, str):
+            content = post
+        elif isinstance(post, dict):
+            content = post.get("content", "")
+            username = (
+                post.get("username")
+                or post.get("user_name")
+                or post.get("author_name")
+            )
+            if username and content:
+                content = f"@{username}: {content}"
+        else:
+            content = ""
+
+        content = str(content).strip()
+        if content:
+            tweets.append(content)
+
+    if not tweets:
+        raise ValueError("Cannot collect an LLM choice from an empty feed")
+
+    return tweets
+
+
+async def collect_llm_choice(
+    persona,
+    feed_posts,
+    *,
+    model="qwen3.6:35b-a3b-mtp-q4_K_M",
+    ollama_url="http://127.0.0.1:11434",
+    request_timeout=1800,
+    seed=None,
+):
+    """Collect a constrained LLM choice without executing an OASIS action."""
+    feed_tweets = feed_posts_to_text(feed_posts)
+    prompt = build_llm_prior_prompt(persona, feed_tweets)
+
+    return await asyncio.to_thread(
+        call_constrained_action,
+        prompt,
+        model=model,
+        ollama_url=ollama_url,
+        request_timeout=request_timeout,
+        seed=seed,
+    )
 
 
 def stable_user_seed(prior_seed, user_id, is_io):
