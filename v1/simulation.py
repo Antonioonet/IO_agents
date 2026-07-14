@@ -162,6 +162,39 @@ async def main():
             io_agent_ids.add(agent_id)
     
 
+   
+    await set_text_prompt(
+        args=args,
+        agent_graph=agent_graph,
+        profile_path=profile_path,
+        model=model,
+        available_actions=available_actions,
+    )
+
+    ## fix the agente graph templat 
+
+    # Define the path to the database
+    db_path = str(base_dir / "data" / args.experiment_name / "database.db")
+    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+    os.environ["OASIS_DB_PATH"] = os.path.abspath(db_path)
+
+    if os.path.exists(db_path):
+        os.remove(db_path)
+
+    platform = oasis.Platform(
+        db_path=db_path,
+        recsys_type="twhin-bert",
+        max_rec_post_len=5,
+        refresh_rec_post_count=10,
+        following_post_count=2,
+    )
+    env = oasis.make(
+        agent_graph=agent_graph,
+        platform=platform,
+        database_path=db_path,
+    )
+    await env.reset()
+
     seed_actions = {}
     await set_text_prompt(
             args=args,
@@ -205,38 +238,6 @@ async def main():
 
     await env.step(seed_actions)
 
-
-    await set_text_prompt(
-        args=args,
-        agent_graph=agent_graph,
-        profile_path=profile_path,
-        model=model,
-        available_actions=available_actions,
-    )
-
-    ## fix the agente graph templat 
-
-    # Define the path to the database
-    db_path = str(base_dir / "data" / args.experiment_name / "database.db")
-    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-    os.environ["OASIS_DB_PATH"] = os.path.abspath(db_path)
-
-    if os.path.exists(db_path):
-        os.remove(db_path)
-
-    platform = oasis.Platform(
-        db_path=db_path,
-        recsys_type="twhin-bert",
-        max_rec_post_len=5,
-        refresh_rec_post_count=10,
-        following_post_count=2,
-    )
-    env = oasis.make(
-        agent_graph=agent_graph,
-        platform=platform,
-        database_path=db_path,
-    )
-    await env.reset()
 
     for step in range(args.llm_steps):
         print(f"Step {step + 1}/{args.llm_steps}")
