@@ -29,6 +29,7 @@ mkdir -p "$OLLAMA_MODELS_DIR"
 
 apptainer pull "$OLLAMA_SIF" docker://ollama/ollama:latest
 
+export APPTAINERENV_OLLAMA_LLM_LIBRARY=cuda_v12
 export APPTAINERENV_OLLAMA_HOST="$OLLAMA_HOST"
 export APPTAINERENV_OLLAMA_MODELS="/models"
 
@@ -45,12 +46,8 @@ apptainer exec --nv \
   ollama pull "$MODEL"
 
 python v1/simulation.py \
-  --normal-file "$NORMAL_FILE" \
-  --io-file "$IO_FILE" \
-  --normal-limit "$NORMAL_LIMIT" \
-  --io-limit "$IO_LIMIT" \
-  --tweets-per-user "$TWEETS_PER_USER" \
-  --do-nothing-prob "$DO_NOTHING_PROB" \
+  --action-mode "prompt_probabilities" \
   --model "$MODEL" \
   --ollama-url "$OLLAMA_BASE_URL" \
   --llm-steps "$LLM_STEPS"
+

@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pandas as pd
 from camel.prompts import TextPrompt
-from oasis import SocialAgent, UserInfo
+from oasis import SocialAgent, UserInfo, ActionType
 import random
 
 from llm_bias_probabilities import collect_llm_choice
@@ -71,12 +71,6 @@ async def probabilities_prompt(user_name,df):
 
 
 CALIBRATED_ACTIONS = ("do_nothing", "post", "reply", "retweet")
-ACTION_TOOL_NAMES = {
-    "do_nothing": "do_nothing",
-    "post": "create_post",
-    "reply": "create_comment",
-    "retweet": "repost",
-}
 
 
 def corrected_action_probabilities(user_row, llm_choice, beta=1.0):
@@ -108,53 +102,42 @@ def corrected_action_probabilities(user_row, llm_choice, beta=1.0):
     return {action: weight / total for action, weight in weights.items()}
 
 
-async def logitic_prompt(
-    user_info: UserInfo,
-    df,
-    feed_posts,
-    *,
-    beta=1.0,
-    model="qwen3.6:35b-a3b-mtp-q4_K_M",
-    ollama_url="http://127.0.0.1:11434",
-    request_timeout=1800,
-    llm_seed=None,
-) -> str:
-    """Select a calibrated action for a feed without executing that action."""
-    user_row = df[df["name"] == user_info.name]
-    if user_row.empty:
-        raise ValueError(f"No user found with name: {user_info.name}")
 
-    persona = user_info.description or user_info.profile or user_info.name
-    llm_choice = await collect_llm_choice(
-        persona=persona,
-        feed_posts=feed_posts,
-        model=model,
-        ollama_url=ollama_url,
-        request_timeout=request_timeout,
-        seed=llm_seed,
-    )
-    probabilities = corrected_action_probabilities(
-        user_row.iloc[0],
-        llm_choice,
-        beta=beta,
-    )
-
-    selected_action = random.choices(
-        population=list(CALIBRATED_ACTIONS),
-        weights=[probabilities[action] for action in CALIBRATED_ACTIONS],
-        k=1,
-    )[0]
-
-    return f"""
-    # RESPONSE METHOD
-        Please perform this action by tool calling.
-
-    # SELECTED ACTION
-    - {ACTION_TOOL_NAMES[selected_action]}
-    """
+TOOL_TO_PROBABILITY_ATTRIBUTE = {
+    "do_nothing": "do_nothing_prob",
+    "create_post": "post_prob",
+    "create_comment": "reply_prob",
+    "repost": "retweet_prob",
+}
 
 
+def prune_actions(agent_graph):
+    for _, agent in agent_graph.get_agents():
+        action_tools = {
+            tool.get_function_name(): tool
+            for tool in agent.action_tools
+            if tool.get_function_name() in TOOL_TO_PROBABILITY_ATTRIBUTE
+        }
 
+        tool_names = list(action_tools)
+
+        selected_tool_name = random.choices(
+            population=tool_names,
+            weights=[
+                getattr(
+                    agent.user_info,
+                    TOOL_TO_PROBABILITY_ATTRIBUTE[tool_name],
+                )
+                for tool_name in tool_names
+            ],
+            k=1,
+        )[0]
+
+        # Remove the four social-action tools.
+        agent.remove_tools(tool_names)
+
+        # Register only the selected tool.
+        agent.add_tool(action_tools[selected_tool_name])
 
 async def set_text_prompt(
     args,

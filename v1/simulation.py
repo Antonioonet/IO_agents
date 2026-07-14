@@ -251,10 +251,11 @@ async def main():
     await env.step(seed_actions)
     
 
-
     for step in range(args.llm_steps):
         print(f"Step {step + 1}/{args.llm_steps}")
- 
+
+
+        if arg.action_mode == "autonomous": prune_actions(env.agent_graph())
         actions = {
             agent: LLMAction()
             for _, agent in env.agent_graph.get_agents()
