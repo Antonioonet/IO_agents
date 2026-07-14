@@ -45,7 +45,6 @@ apptainer exec --nv \
   ollama pull "$MODEL"
 
 python v1/simulation.py \
-  --generate-personas \
   --normal-file "$NORMAL_FILE" \
   --io-file "$IO_FILE" \
   --normal-limit "$NORMAL_LIMIT" \
