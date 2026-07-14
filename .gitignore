@@ -28,3 +28,4 @@ log/
 # Local/generated data
 v0/data/
 v1/data/
+v1/local_run.sh
